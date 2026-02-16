@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchSalesData, calculateAnalytics } from './services/dataService.ts';
-import { getAIInsights } from './services/geminiService.ts';
-import { SaleRecord, SalesAnalytics, InsightReport } from './types.ts';
-import Dashboard from './components/Dashboard.tsx';
-import PivotTable from './components/PivotTable.tsx';
-import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Cloud, Settings2, Globe, HardDrive } from 'lucide-react';
+import { fetchSalesData, calculateAnalytics } from './services/dataService';
+import { getAIInsights } from './services/geminiService';
+import { SaleRecord, SalesAnalytics, InsightReport } from './types';
+import Dashboard from './components/Dashboard';
+import PivotTable from './components/PivotTable';
+import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
