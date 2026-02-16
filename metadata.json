@@ -1,0 +1,5 @@
+{
+  "name": "SalesInsight AI Dashboard",
+  "description": "A high-performance sales analytics dashboard that connects to Google Sheets, providing deep data visualization and AI-powered business insights using Gemini.",
+  "requestFramePermissions": []
+}
