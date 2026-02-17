@@ -1,10 +1,12 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchSalesData, calculateAnalytics } from './services/dataService';
 import { getAIInsights } from './services/geminiService';
 import { SaleRecord, SalesAnalytics, InsightReport } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
-import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2 } from 'lucide-react';
+import CollectionsTable from './components/CollectionsTable';
+import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
@@ -13,7 +15,7 @@ const App: React.FC = () => {
   const [insights, setInsights] = useState<InsightReport | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'raw-data'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'raw-data'>('dashboard');
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
@@ -65,6 +67,13 @@ const App: React.FC = () => {
       >
         <div className="shrink-0"><Layout className="w-5 h-5" /></div>
         <span className="truncate">Dashboard</span>
+      </button>
+      <button
+        onClick={() => { setActiveTab('collections'); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'collections' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
+      >
+        <div className="shrink-0"><ReceiptText className="w-5 h-5" /></div>
+        <span className="truncate">Pending Collections</span>
       </button>
       <button
         onClick={() => { setActiveTab('pivot'); setIsSidebarOpen(false); }}
@@ -174,7 +183,7 @@ const App: React.FC = () => {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-slate-800">
-           <p className="text-[10px] text-slate-500 font-medium text-center italic">SalesInsight v2.1 Pro</p>
+           <p className="text-[10px] text-slate-500 font-medium text-center italic">SalesInsight v2.5 Pro</p>
         </div>
       </aside>
 
@@ -189,7 +198,7 @@ const App: React.FC = () => {
                 </span>
               </div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? 'Pivot Explorer' : 'Transaction Log'}
+                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? 'Pivot Explorer' : activeTab === 'collections' ? 'Pending Collections' : 'Transaction Log'}
               </h2>
             </div>
             
@@ -230,6 +239,8 @@ const App: React.FC = () => {
             </div>
           ) : activeTab === 'dashboard' && analytics ? (
             <Dashboard analytics={analytics} insights={insights} isAnalyzing={analyzing} />
+          ) : activeTab === 'collections' ? (
+            <CollectionsTable data={records} />
           ) : activeTab === 'pivot' ? (
             <PivotTable data={records} headers={headers} />
           ) : (
@@ -273,6 +284,13 @@ const App: React.FC = () => {
         >
           <Layout className="w-6 h-6" />
           <span className="text-[9px] font-black uppercase tracking-widest">Hub</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('collections')}
+          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'collections' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
+        >
+          <ReceiptText className="w-6 h-6" />
+          <span className="text-[9px] font-black uppercase tracking-widest">Dues</span>
         </button>
         <button 
           onClick={() => setActiveTab('pivot')}

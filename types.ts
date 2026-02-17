@@ -11,6 +11,11 @@ export interface SaleRecord extends Record<string, any> {
   sales: number;
   quantity: number;
   profit: number;
+  // Specific fields for collections logic
+  subtotal: number;
+  paidStatus: string;
+  paidDate: string;
+  colSValue: string;
 }
 
 export interface SalesData {
