@@ -1,11 +1,9 @@
 
 import { SaleRecord, SalesAnalytics, SalesData } from '../types';
 
-// The default ID provided by the user
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
 
 const getExportUrl = (id: string) => {
-  // If it's a full URL, try to extract the ID, otherwise assume it's an ID
   const sheetId = id.includes('docs.google.com') 
     ? id.match(/[-\w]{25,}/)?.[0] || id 
     : id;
@@ -43,7 +41,7 @@ const parseCSV = (text: string): string[][] => {
         currentField = '';
       } else if (char === '\n' || char === '\r') {
         row.push(currentField.trim());
-        if (row.length > 0 && row.some(cell => cell.length > 0)) {
+        if (row.length > 0) {
           result.push(row);
         }
         row = [];
@@ -65,18 +63,21 @@ const parseCSV = (text: string): string[][] => {
   return result;
 };
 
-const normalizeKey = (h: string | undefined): string => {
-  if (typeof h !== 'string') return '';
-  return h.toLowerCase().replace(/[^a-z0-9]/g, '');
-};
-
 const findColumn = (headers: (string | undefined)[], keywords: string[]): number => {
-  const normalizedHeaders = headers.map(h => normalizeKey(h));
+  const normalizedHeaders = headers.map(h => h?.toLowerCase().replace(/[^a-z0-9]/g, '') || '');
   for (const keyword of keywords) {
     const idx = normalizedHeaders.findIndex(h => h.includes(keyword.toLowerCase()));
     if (idx !== -1) return idx;
   }
   return -1;
+};
+
+const parseNum = (val: any): number => {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return val;
+  const cleaned = val.toString().replace(/[$,\s]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
 };
 
 export const fetchSalesData = async (customId?: string): Promise<{ data: SalesData; source: 'cloud' | 'local' }> => {
@@ -94,7 +95,7 @@ export const fetchSalesData = async (customId?: string): Promise<{ data: SalesDa
     const resultData = processRows(rows);
     return { data: resultData, source: 'cloud' };
   } catch (error) {
-    console.warn('Syncing with Google Drive failed, falling back to local data.csv', error);
+    console.warn('Syncing fallback to local data', error);
     try {
       const localResponse = await fetch('./data.csv');
       if (!localResponse.ok) throw new Error('Local fallback failed');
@@ -102,66 +103,63 @@ export const fetchSalesData = async (customId?: string): Promise<{ data: SalesDa
       const localRows = parseCSV(localText);
       return { data: processRows(localRows), source: 'local' };
     } catch (localError) {
-      throw new Error('No data source available. Please check your internet connection or the provided Sheet ID.');
+      throw new Error('No data source available.');
     }
   }
 };
 
 const processRows = (rows: string[][]): SalesData => {
   const headers = rows[0];
-  const cleanHeaders = headers.filter(h => h && h.trim() && h !== '.');
+  const cleanHeaders = headers.filter(h => h && h.trim());
+
+  // Strict column mapping as per user instructions
+  const MAP = {
+    customer: 7,    // H
+    subtotal: 9,    // J
+    paid: 12,       // M (Shared for status and potential date)
+    colS: 18        // S
+  };
 
   const idx = {
-    orderId: findColumn(headers, ['ref', 'invoice', 'orderid']),
-    orderDate: findColumn(headers, ['date', 'delivered', 'paiddate']),
+    orderId: findColumn(headers, ['orderid', 'ref', 'invoice']),
+    orderDate: findColumn(headers, ['orderdate', 'date']),
     customerName: findColumn(headers, ['customer', 'user']),
-    segment: findColumn(headers, ['out', 'segment', 'unit']),
-    region: findColumn(headers, ['district', 'region', 'area']),
-    category: findColumn(headers, ['item', 'category', 'product']),
-    subCategory: findColumn(headers, ['subcategory', 'type']),
-    productName: findColumn(headers, ['item', 'product', 'description']),
-    sales: findColumn(headers, ['subtotal', 'sales', 'total', 'paid']),
-    quantity: findColumn(headers, ['quantity', 'count', 'qty']),
-    profit: findColumn(headers, ['profit', 'margin', 'earning'])
+    sales: findColumn(headers, ['sales', 'total']),
+    quantity: findColumn(headers, ['quantity', 'qty']),
+    profit: findColumn(headers, ['profit']),
   };
 
   const records: SaleRecord[] = rows.slice(1).map((row, rowIdx) => {
     const record: any = {};
     headers.forEach((h, i) => {
-      if (h && h.trim()) {
-        const val = row[i] ?? '';
-        if (typeof val === 'string' && /^-?\d+(\.\d+)?$/.test(val.replace(/[$,]/g, ''))) {
-          record[h] = parseFloat(val.replace(/[$,]/g, ''));
-        } else {
-          record[h] = val;
-        }
-      }
+      if (h && h.trim()) record[h] = row[i] || '';
     });
 
-    const getVal = (colIndex: number) => {
-      if (colIndex === -1 || colIndex >= row.length) return '';
-      return row[colIndex] ?? '';
+    const getRaw = (colIndex: number) => {
+      if (colIndex < 0 || colIndex >= row.length) return '';
+      return (row[colIndex] || '').toString().trim();
     };
     
-    const parseNum = (val: string) => {
-      if (!val) return 0;
-      return parseFloat(val.toString().replace(/[^0-9.-]/g, '')) || 0;
-    };
+    const recordSubtotal = parseNum(getRaw(MAP.subtotal));
 
-    const salesVal = parseNum(getVal(idx.sales));
     return {
       ...record,
-      orderId: getVal(idx.orderId) || `REF-${rowIdx + 1}`,
-      orderDate: getVal(idx.orderDate) || new Date().toISOString(),
-      customerName: getVal(idx.customerName) || 'Walk-in',
-      segment: getVal(idx.segment) || 'Standard',
-      region: getVal(idx.region) || 'General',
-      category: getVal(idx.category) || 'Products',
-      subCategory: getVal(idx.subCategory) || '',
-      productName: getVal(idx.productName) || 'Standard Item',
-      sales: salesVal,
-      quantity: parseInt(getVal(idx.quantity).toString().replace(/[^0-9]/g, '')) || 0,
-      profit: idx.profit !== -1 ? parseNum(getVal(idx.profit)) : salesVal * 0.15,
+      orderId: getRaw(idx.orderId) || `REF-${rowIdx + 1}`,
+      orderDate: getRaw(idx.orderDate) || new Date().toISOString(),
+      customerName: getRaw(MAP.customer) || getRaw(idx.customerName) || 'Unknown',
+      segment: record.segment || 'Standard',
+      region: record.region || 'General',
+      category: record.category || 'Products',
+      subCategory: record.subCategory || '',
+      productName: record.productName || 'Standard Item',
+      sales: parseNum(getRaw(idx.sales)) || recordSubtotal,
+      quantity: parseInt(getRaw(idx.quantity).replace(/[^0-9]/g, '')) || 0,
+      profit: parseNum(getRaw(idx.profit)) || recordSubtotal * 0.15,
+      // Enhanced collections fields
+      subtotal: recordSubtotal,
+      paidStatus: getRaw(MAP.paid), // Using Column M
+      paidDate: getRaw(MAP.paid),   // Checking Column M for date as well
+      colSValue: getRaw(MAP.colS)  // Column S
     };
   });
 
@@ -180,18 +178,11 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
   };
 
   data.forEach(item => {
-    analytics.totalSales += item.sales || 0;
-    analytics.totalProfit += item.profit || 0;
-    
-    if (item.category) {
-      analytics.salesByCategory[item.category] = (analytics.salesByCategory[item.category] || 0) + item.sales;
-    }
-    if (item.region) {
-      analytics.salesByRegion[item.region] = (analytics.salesByRegion[item.region] || 0) + item.sales;
-    }
-    
-    const dateStr = item.orderDate;
-    const date = new Date(dateStr);
+    analytics.totalSales += item.sales;
+    analytics.totalProfit += item.profit;
+    if (item.category) analytics.salesByCategory[item.category] = (analytics.salesByCategory[item.category] || 0) + item.sales;
+    if (item.region) analytics.salesByRegion[item.region] = (analytics.salesByRegion[item.region] || 0) + item.sales;
+    const date = new Date(item.orderDate);
     if (!isNaN(date.getTime())) {
       const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       analytics.salesByMonth[monthYear] = (analytics.salesByMonth[monthYear] || 0) + item.sales;
