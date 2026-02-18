@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { SaleRecord, PivotConfig, SortOrder } from '../types';
-import { ChevronDown, Filter, SortDesc, SortAsc } from 'lucide-react';
+import { Filter, SortDesc, SortAsc } from 'lucide-react';
 
 interface PivotTableProps {
   data: SaleRecord[];
@@ -9,59 +9,52 @@ interface PivotTableProps {
 }
 
 const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
-  // Select sensible defaults from available headers
-  const defaultRow = headers.find(h => ['district', 'item', 'customer', 'user', 'customers'].includes(h.toLowerCase())) || headers[0];
-  const defaultCol = headers.find(h => ['unit', 'out', 'status', 'delivered'].includes(h.toLowerCase())) || 'none';
-  const defaultMetric = headers.find(h => ['subtotal', 'price', 'quantity', 'paid', 'total'].includes(h.toLowerCase())) || headers[headers.length - 1];
+  // Map logical names to actual data keys
+  const findKey = (candidates: string[]) => {
+    const lowerHeaders = headers.map(h => h.toLowerCase());
+    for (const cand of candidates) {
+      const idx = lowerHeaders.findIndex(h => h.includes(cand.toLowerCase()));
+      if (idx !== -1) return headers[idx];
+    }
+    return candidates[0]; // Fallback to first candidate name
+  };
+
+  const itemKey = findKey(['productName', 'item']);
+  const customerKey = findKey(['customerName', 'customer', 'customers']);
+  const subtotalKey = 'subtotal'; // Virtual field from service
+  const quantityKey = findKey(['quantity', 'qty']);
 
   const [config, setConfig] = useState<PivotConfig>({
-    rowField: defaultRow,
-    colField: defaultCol,
-    metric: defaultMetric,
-    sortOrder: 'desc', // Default to highest to lowest as requested
+    rowField: itemKey,
+    colField: 'none',
+    metric: subtotalKey,
+    sortOrder: 'desc',
   });
-
-  // Ensure current config is valid if headers change
-  useEffect(() => {
-    if (!headers.includes(config.rowField)) {
-      setConfig(prev => ({ ...prev, rowField: headers[0] }));
-    }
-    if (config.colField !== 'none' && !headers.includes(config.colField)) {
-      setConfig(prev => ({ ...prev, colField: 'none' }));
-    }
-    if (!headers.includes(config.metric)) {
-      setConfig(prev => ({ ...prev, metric: headers[headers.length - 1] }));
-    }
-  }, [headers]);
 
   const pivotData = useMemo(() => {
     const rows = new Set<string>();
-    const cols = new Set<string>();
     const matrix: Record<string, Record<string, number>> = {};
     const rowTotals: Record<string, number> = {};
-    const colTotals: Record<string, number> = {};
     let grandTotal = 0;
 
     data.forEach((item) => {
       const rowVal = String(item[config.rowField] ?? 'N/A');
-      const colVal = config.colField === 'none' ? 'Grand Total' : String(item[config.colField] ?? 'N/A');
+      const colVal = 'Grand Total';
       
       const val = item[config.metric];
       const metricVal = typeof val === 'number' ? val : parseFloat(String(val).replace(/[$,]/g, '')) || 0;
 
       rows.add(rowVal);
-      cols.add(colVal);
 
       if (!matrix[rowVal]) matrix[rowVal] = {};
       matrix[rowVal][colVal] = (matrix[rowVal][colVal] || 0) + metricVal;
       
       rowTotals[rowVal] = (rowTotals[rowVal] || 0) + metricVal;
-      colTotals[colVal] = (colTotals[colVal] || 0) + metricVal;
       grandTotal += metricVal;
     });
 
     let sortedRows = Array.from(rows);
-    const sortedCols = Array.from(cols).sort();
+    const sortedCols = ['Grand Total'];
 
     // Apply Sorting based on Row Grand Total
     if (config.sortOrder === 'alpha') {
@@ -72,75 +65,80 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       sortedRows.sort((a, b) => (rowTotals[a] || 0) - (rowTotals[b] || 0));
     }
 
-    return { sortedRows, sortedCols, matrix, rowTotals, colTotals, grandTotal };
-  }, [data, config]);
+    return { sortedRows, sortedCols, matrix, rowTotals, grandTotal };
+  }, [data, config, itemKey, customerKey, subtotalKey, quantityKey]);
 
   const formatValue = (val: number) => {
-    const isCurrency = ['subtotal', 'price', 'paid', 'total', 'sales', 'profit'].some(k => config.metric.toLowerCase().includes(k));
+    const isCurrency = config.metric === subtotalKey;
     if (isCurrency) {
       return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
     }
     return val.toLocaleString(undefined, { maximumFractionDigits: 1 });
   };
 
+  const SelectorButton: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
+    <button
+      onClick={onClick}
+      className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all border ${
+        active 
+          ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/20' 
+          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Controls */}
-      <div className="bg-white p-4 md:p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Row Selection */}
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Rows</label>
-          <div className="relative">
-            <select
-              value={config.rowField}
-              onChange={(e) => setConfig({ ...config, rowField: e.target.value })}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-            >
-              {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Group By (Rows)</label>
+          <div className="flex gap-2">
+            <SelectorButton 
+              label="Item" 
+              active={config.rowField === itemKey} 
+              onClick={() => setConfig({ ...config, rowField: itemKey })} 
+            />
+            <SelectorButton 
+              label="Customers" 
+              active={config.rowField === customerKey} 
+              onClick={() => setConfig({ ...config, rowField: customerKey })} 
+            />
           </div>
         </div>
 
+        {/* Metric Selection */}
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Columns</label>
-          <div className="relative">
-            <select
-              value={config.colField}
-              onChange={(e) => setConfig({ ...config, colField: e.target.value })}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-            >
-              <option value="none">None (Summary Only)</option>
-              {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Aggregate (Metric)</label>
+          <div className="flex gap-2">
+            <SelectorButton 
+              label="Subtotal" 
+              active={config.metric === subtotalKey} 
+              onClick={() => setConfig({ ...config, metric: subtotalKey })} 
+            />
+            <SelectorButton 
+              label="Quantity" 
+              active={config.metric === quantityKey} 
+              onClick={() => setConfig({ ...config, metric: quantityKey })} 
+            />
           </div>
         </div>
 
+        {/* Sort Selection */}
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Metric</label>
-          <div className="relative">
-            <select
-              value={config.metric}
-              onChange={(e) => setConfig({ ...config, metric: e.target.value })}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-            >
-              {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sort By Grand Total</label>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sort Sequence</label>
           <div className="relative">
             <select
               value={config.sortOrder}
               onChange={(e) => setConfig({ ...config, sortOrder: e.target.value as SortOrder })}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-slate-700 font-bold text-xs uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
             >
               <option value="alpha">Alphabetical (A-Z)</option>
-              <option value="desc">Highest to Lowest</option>
-              <option value="asc">Lowest to Highest</option>
+              <option value="desc">Highest Performance</option>
+              <option value="asc">Lowest Performance</option>
             </select>
             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 {config.sortOrder === 'desc' ? <SortDesc className="w-4 h-4 text-blue-600" /> : 
@@ -152,67 +150,49 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 font-bold text-slate-600 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 uppercase tracking-wider text-[10px]">
-                  {config.rowField}
+                <th className="px-8 py-5 font-black text-slate-400 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 uppercase tracking-widest text-[10px]">
+                  {config.rowField === itemKey ? 'Product / Item' : 'Customer Entity'}
                 </th>
-                {pivotData.sortedCols.map(col => (
-                  <th key={col} className="px-6 py-4 font-bold text-slate-600 text-right uppercase tracking-wider text-[10px] min-w-[120px]">
-                    {col}
-                  </th>
-                ))}
-                {config.colField !== 'none' && (
-                  <th className="px-6 py-4 font-bold text-blue-600 text-right uppercase tracking-wider text-[10px] bg-blue-50/30">
-                    Grand Total
-                  </th>
-                )}
+                <th className="px-8 py-5 font-black text-blue-600 text-right uppercase tracking-widest text-[10px] bg-blue-50/30">
+                  {config.metric === subtotalKey ? 'Total Revenue (USD)' : 'Total Units'}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {pivotData.sortedRows.map(row => (
+              {pivotData.sortedRows.map((row, idx) => (
                 <tr key={row} className="hover:bg-slate-50/80 transition-colors group">
-                  <td className="px-6 py-4 font-bold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 group-hover:bg-slate-50">
-                    {row}
+                  <td className="px-8 py-5 font-black text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 group-hover:bg-slate-50">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black text-slate-300 w-4">{idx + 1}</span>
+                      {row}
+                    </div>
                   </td>
-                  {pivotData.sortedCols.map(col => (
-                    <td key={col} className="px-6 py-4 text-right text-slate-600 font-medium tabular-nums">
-                      {pivotData.matrix[row][col] ? formatValue(pivotData.matrix[row][col]) : '-'}
-                    </td>
-                  ))}
-                  {config.colField !== 'none' && (
-                    <td className="px-6 py-4 text-right font-black text-slate-900 bg-slate-50/30 tabular-nums">
-                      {formatValue(pivotData.rowTotals[row])}
-                    </td>
-                  )}
+                  <td className="px-8 py-5 text-right font-black text-slate-900 bg-slate-50/10 tabular-nums text-lg">
+                    {formatValue(pivotData.rowTotals[row])}
+                  </td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="bg-slate-900 text-white border-t-2 border-slate-800">
               <tr>
-                <td className="px-6 py-5 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900">Total</td>
-                {pivotData.sortedCols.map(col => (
-                  <td key={col} className="px-6 py-5 text-right font-black tabular-nums">
-                    {formatValue(pivotData.colTotals[col])}
-                  </td>
-                ))}
-                {config.colField !== 'none' && (
-                  <td className="px-6 py-5 text-right font-black text-blue-400 tabular-nums">
-                    {formatValue(pivotData.grandTotal)}
-                  </td>
-                )}
+                <td className="px-8 py-6 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900 italic">Portfolio Grand Total</td>
+                <td className="px-8 py-6 text-right font-black text-blue-400 tabular-nums text-2xl">
+                  {formatValue(pivotData.grandTotal)}
+                </td>
               </tr>
             </tfoot>
           </table>
         </div>
       </div>
       
-      <div className="flex items-center gap-2 p-4 bg-blue-50 text-blue-700 rounded-2xl text-xs font-medium border border-blue-100">
+      <div className="flex items-center gap-2 p-4 bg-blue-50 text-blue-700 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-blue-100">
         <Filter className="w-4 h-4 shrink-0" />
-        <span>Currently displaying <b>{config.metric}</b> aggregated by <b>{config.rowField}</b> {config.colField !== 'none' && <>and <b>{config.colField}</b></>}. Sorting by <b>Total {config.sortOrder === 'desc' ? '(Highest First)' : config.sortOrder === 'asc' ? '(Lowest First)' : '(A-Z)'}</b>.</span>
+        <span>Aggregating <b>{config.metric}</b> for <b>{pivotData.sortedRows.length}</b> unique entities.</span>
       </div>
     </div>
   );

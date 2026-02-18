@@ -112,11 +112,11 @@ const processRows = (rows: string[][]): SalesData => {
   const headers = rows[0];
   const cleanHeaders = headers.filter(h => h && h.trim());
 
-  // Strict column mapping as per user instructions
   const MAP = {
     customer: 7,    // H
     subtotal: 9,    // J
-    paid: 12,       // M (Shared for status and potential date)
+    user: 10,       // K
+    paid: 12,       // M
     colS: 18        // S
   };
 
@@ -129,7 +129,13 @@ const processRows = (rows: string[][]): SalesData => {
     profit: findColumn(headers, ['profit']),
   };
 
-  const records: SaleRecord[] = rows.slice(1).map((row, rowIdx) => {
+  const dataRows = rows.slice(1).filter(row => {
+    const id = (row[idx.orderId] || '').toString().trim();
+    const customer = (row[MAP.customer] || row[idx.customerName] || '').toString().trim();
+    return id !== '' || customer !== '';
+  });
+
+  const records: SaleRecord[] = dataRows.map((row, rowIdx) => {
     const record: any = {};
     headers.forEach((h, i) => {
       if (h && h.trim()) record[h] = row[i] || '';
@@ -147,6 +153,7 @@ const processRows = (rows: string[][]): SalesData => {
       orderId: getRaw(idx.orderId) || `REF-${rowIdx + 1}`,
       orderDate: getRaw(idx.orderDate) || new Date().toISOString(),
       customerName: getRaw(MAP.customer) || getRaw(idx.customerName) || 'Unknown',
+      userName: getRaw(MAP.user) || 'Unknown',
       segment: record.segment || 'Standard',
       region: record.region || 'General',
       category: record.category || 'Products',
@@ -155,18 +162,30 @@ const processRows = (rows: string[][]): SalesData => {
       sales: parseNum(getRaw(idx.sales)) || recordSubtotal,
       quantity: parseInt(getRaw(idx.quantity).replace(/[^0-9]/g, '')) || 0,
       profit: parseNum(getRaw(idx.profit)) || recordSubtotal * 0.15,
-      // Enhanced collections fields
       subtotal: recordSubtotal,
-      paidStatus: getRaw(MAP.paid), // Using Column M
-      paidDate: getRaw(MAP.paid),   // Checking Column M for date as well
-      colSValue: getRaw(MAP.colS)  // Column S
+      paidStatus: getRaw(MAP.paid),
+      paidDate: getRaw(MAP.paid),
+      colSValue: getRaw(MAP.colS)
     };
   });
 
   return { records, headers: cleanHeaders };
 };
 
+const normalizeUser = (name: string): string | null => {
+  const n = name.trim().toLowerCase();
+  if (n === 'eva') return 'Eva';
+  if (n === 'yo') return 'Yo';
+  if (n === 'katie') return 'Katie';
+  if (n === 'kasey') return 'Kasey';
+  return null;
+};
+
 export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
   const analytics: SalesAnalytics = {
     totalSales: 0,
     totalProfit: 0,
@@ -175,17 +194,40 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
     salesByCategory: {},
     salesByRegion: {},
     salesByMonth: {},
+    salesByDay: {},
+    userSalesPastWeek: { 'Eva': 0, 'Yo': 0, 'Katie': 0, 'Kasey': 0 },
+    userSalesPast30Days: { 'Eva': 0, 'Yo': 0, 'Katie': 0, 'Kasey': 0 },
   };
 
   data.forEach(item => {
     analytics.totalSales += item.sales;
     analytics.totalProfit += item.profit;
-    if (item.category) analytics.salesByCategory[item.category] = (analytics.salesByCategory[item.category] || 0) + item.sales;
-    if (item.region) analytics.salesByRegion[item.region] = (analytics.salesByRegion[item.region] || 0) + item.sales;
+    
+    if (item.category) {
+      analytics.salesByCategory[item.category] = (analytics.salesByCategory[item.category] || 0) + item.sales;
+    }
+    if (item.region) {
+      analytics.salesByRegion[item.region] = (analytics.salesByRegion[item.region] || 0) + item.sales;
+    }
+    
     const date = new Date(item.orderDate);
-    if (!isNaN(date.getTime())) {
+    if (!isNaN(date.getTime()) && date.getFullYear() > 1900) {
       const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       analytics.salesByMonth[monthYear] = (analytics.salesByMonth[monthYear] || 0) + item.sales;
+      
+      const dayKey = date.toISOString().split('T')[0];
+      analytics.salesByDay[dayKey] = (analytics.salesByDay[dayKey] || 0) + item.subtotal;
+
+      // Calculate User Performance for Eva, Yo, Katie, Kasey
+      const normalized = normalizeUser(item.userName);
+      if (normalized) {
+        if (date >= sevenDaysAgo) {
+          analytics.userSalesPastWeek[normalized] = (analytics.userSalesPastWeek[normalized] || 0) + item.subtotal;
+        }
+        if (date >= thirtyDaysAgo) {
+          analytics.userSalesPast30Days[normalized] = (analytics.userSalesPast30Days[normalized] || 0) + item.subtotal;
+        }
+      }
     }
   });
 

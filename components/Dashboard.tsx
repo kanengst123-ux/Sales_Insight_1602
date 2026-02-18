@@ -3,9 +3,9 @@ import React from 'react';
 import { SalesAnalytics, InsightReport } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line, Legend 
+  Cell
 } from 'recharts';
-import { TrendingUp, DollarSign, Package, CheckCircle2, Lightbulb, Activity, MessageSquare } from 'lucide-react';
+import { TrendingUp, DollarSign, CheckCircle2, Lightbulb, MessageSquare, Users } from 'lucide-react';
 
 interface DashboardProps {
   analytics: SalesAnalytics;
@@ -16,59 +16,88 @@ interface DashboardProps {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899'];
 
 const KpiCard: React.FC<{ label: string; value: string; icon: React.ReactNode; trend: string; bgColor: string }> = ({ label, value, icon, trend, bgColor }) => (
-  <div className="bg-white p-5 md:p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-    <div className={`absolute top-0 right-0 w-20 h-20 ${bgColor} rounded-full -mr-8 -mt-8 opacity-20 group-hover:scale-110 transition-transform`} />
+  <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group h-full flex flex-col justify-center">
+    <div className={`absolute top-0 right-0 w-24 h-24 ${bgColor} rounded-full -mr-8 -mt-8 opacity-20 group-hover:scale-110 transition-transform`} />
     <div className="relative z-10">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-white shadow-sm ring-1 ring-slate-100">
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-white shadow-sm ring-1 ring-slate-100">
         {icon}
       </div>
-      <p className="text-slate-500 font-bold text-[10px] md:text-xs uppercase tracking-widest">{label}</p>
-      <h3 className="text-xl md:text-2xl font-black text-slate-900 mt-0.5">{value}</h3>
-      <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 inline-block px-2 py-0.5 rounded-full mt-2">
+      <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">{label}</p>
+      <h3 className="text-3xl md:text-4xl font-black text-slate-900 mt-1">{value}</h3>
+      <p className="text-[10px] font-black text-emerald-600 bg-emerald-50 inline-block px-3 py-1 rounded-full mt-3 uppercase tracking-wider">
         {trend}
       </p>
     </div>
   </div>
 );
 
+const UserSalesChart: React.FC<{ title: string, sub: string, data: Record<string, number> }> = ({ title, sub, data }) => {
+  // Fix: Explicitly convert values to Number to avoid TypeScript arithmetic operation errors
+  const chartData = Object.entries(data)
+    .map(([name, value]) => ({ name, value: Number(value) }))
+    .sort((a, b) => Number(b.value) - Number(a.value));
+
+  return (
+    <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="font-black text-slate-800 text-sm md:text-lg uppercase tracking-tight">{title}</h3>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sum of Subtotal</p>
+        </div>
+        <span className="text-[10px] font-black px-3 py-1 bg-slate-100 rounded-full text-slate-500 uppercase tracking-widest">{sub}</span>
+      </div>
+      <div className="h-[250px] md:h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 30 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+            <XAxis type="number" hide />
+            <YAxis 
+              dataKey="name" 
+              type="category" 
+              stroke="#64748b" 
+              fontSize={11} 
+              width={60} 
+              tickLine={false} 
+              axisLine={false} 
+              fontVariant="bold"
+            />
+            <Tooltip 
+              cursor={{ fill: '#f8fafc' }}
+              contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
+              formatter={(value: number) => [`$${value.toLocaleString()}`, 'Subtotal']}
+            />
+            <Bar dataKey="value" fill="#3b82f6" radius={[0, 10, 10, 0]} barSize={32}>
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ analytics, insights, isAnalyzing }) => {
-  const categoryData = Object.entries(analytics.salesByCategory).map(([name, value]) => ({ name, value }));
-  const regionData = Object.entries(analytics.salesByRegion).map(([name, value]) => ({ name, value }));
-  const timelineData = Object.entries(analytics.salesByMonth)
+  // Aggregate daily data for the Revenue Trajectory
+  const dailyData = Object.entries(analytics.salesByDay)
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, sales]) => ({ date, sales }));
+    .map(([date, sales]) => ({ 
+      date, 
+      sales,
+      formattedDate: new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    }));
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+      {/* KPI Section - Highlighted Single Card */}
+      <div className="grid grid-cols-1 gap-6">
         <KpiCard 
-          label="Revenue" 
-          value={`$${analytics.totalSales.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-          icon={<DollarSign className="w-5 h-5 text-blue-600" />}
-          trend="+12.5% vs LW"
+          label="Total Gross Revenue" 
+          value={`$${analytics.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          icon={<DollarSign className="w-6 h-6 text-blue-600" />}
+          trend="+12.5% Performance Growth"
           bgColor="bg-blue-100"
-        />
-        <KpiCard 
-          label="Net Profit" 
-          value={`$${analytics.totalProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-          icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
-          trend="+5.2% vs LW"
-          bgColor="bg-emerald-100"
-        />
-        <KpiCard 
-          label="Orders" 
-          value={analytics.totalOrders.toLocaleString()}
-          icon={<Package className="w-5 h-5 text-amber-600" />}
-          trend="+3.1% vs LW"
-          bgColor="bg-amber-100"
-        />
-        <KpiCard 
-          label="Avg Order" 
-          value={`$${analytics.averageOrderValue.toFixed(0)}`}
-          icon={<Activity className="w-5 h-5 text-purple-600" />}
-          trend="+0.8% vs LW"
-          bgColor="bg-purple-100"
         />
       </div>
 
@@ -137,53 +166,62 @@ const Dashboard: React.FC<DashboardProps> = ({ analytics, insights, isAnalyzing 
 
       {/* Main Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-        {/* Sales Timeline */}
+        {/* Daily Sales Bar Chart */}
         <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <h3 className="font-black text-slate-800 text-sm md:text-lg uppercase tracking-tight">Revenue Trajectory</h3>
-            <span className="text-[10px] font-black px-3 py-1 bg-blue-50 rounded-full text-blue-600 uppercase tracking-widest">Monthly</span>
+            <span className="text-[10px] font-black px-3 py-1 bg-blue-50 rounded-full text-blue-600 uppercase tracking-widest">Daily Sum (Subtotal)</span>
           </div>
           <div className="h-[250px] md:h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timelineData}>
+              <BarChart data={dailyData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val/1000}k`} />
+                <XAxis 
+                  dataKey="formattedDate" 
+                  stroke="#94a3b8" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  dy={10}
+                  minTickGap={30}
+                />
+                <YAxis 
+                  stroke="#94a3b8" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  tickFormatter={(val) => `$${val.toLocaleString()}`} 
+                />
                 <Tooltip 
+                  cursor={{ fill: '#f1f5f9' }}
                   contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
                   itemStyle={{ color: '#3b82f6' }}
+                  formatter={(value: number) => [`$${value.toLocaleString()}`, 'Subtotal Sum']}
                 />
-                <Line type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={5} dot={false} activeDot={{ r: 8, fill: '#3b82f6', stroke: '#fff', strokeWidth: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Regional Distribution */}
-        <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="font-black text-slate-800 text-sm md:text-lg uppercase tracking-tight">Market Strength</h3>
-            <span className="text-[10px] font-black px-3 py-1 bg-slate-100 rounded-full text-slate-500 uppercase tracking-widest">Regional</span>
-          </div>
-          <div className="h-[250px] md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={regionData} layout="vertical" margin={{ left: 10, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={70} tickLine={false} axisLine={false} fontVariant="bold" />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
+                <Bar 
+                  dataKey="sales" 
+                  fill="#3b82f6" 
+                  radius={[6, 6, 0, 0]} 
+                  barSize={dailyData.length > 50 ? undefined : 20}
                 />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 10, 10, 0]} barSize={30}>
-                  {regionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Market Strength - Past 7 Days */}
+        <UserSalesChart 
+          title="Market Strength (7D)" 
+          sub="Last 7 Days" 
+          data={analytics.userSalesPastWeek} 
+        />
+
+        {/* Market Strength - Past 30 Days */}
+        <UserSalesChart 
+          title="Market Strength (30D)" 
+          sub="Last 30 Days" 
+          data={analytics.userSalesPast30Days} 
+        />
       </div>
     </div>
   );

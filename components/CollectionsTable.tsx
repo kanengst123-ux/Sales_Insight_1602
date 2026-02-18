@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { SaleRecord } from '../types';
-import { Wallet, TrendingDown, Users, AlertCircle, CalendarClock, ChevronRight, Hash } from 'lucide-react';
+import { Wallet, TrendingDown, AlertCircle, ChevronRight } from 'lucide-react';
 
 interface CollectionsTableProps {
   data: SaleRecord[];
@@ -11,7 +11,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
   const collectionsData = useMemo(() => {
     const now = new Date();
     
-    // Logic as requested:
+    // Logic:
     // EITHER: "Paid" (Column M) is later than current date
     // OR: "Paid" (Column M) = "N" AND simultaneously "F" (Column S) = "F"
     const filtered = data.filter(item => {
@@ -58,41 +58,21 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-slate-900 text-white p-8 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden group">
+      {/* KPI Section - Featuring only the primary metric */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-slate-900 text-white p-8 md:p-10 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-8 opacity-10 transform translate-x-4 -translate-y-4 group-hover:translate-x-0 group-hover:translate-y-0 transition-transform">
-            <Wallet size={120} />
+            <Wallet size={160} />
           </div>
           <div className="relative z-10">
-            <p className="text-blue-400 font-bold text-[10px] uppercase tracking-widest mb-1">Total Outstanding Dues</p>
-            <h3 className="text-4xl font-black tabular-nums">${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            <div className="mt-4 flex items-center gap-2">
-              <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-[10px] font-bold rounded-lg border border-blue-500/20">Awaiting Settlement</span>
+            <p className="text-blue-400 font-bold text-xs uppercase tracking-widest mb-2">Total Outstanding Dues</p>
+            <h3 className="text-5xl md:text-6xl font-black tabular-nums">${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+            <div className="mt-6 flex items-center gap-2">
+              <span className="px-4 py-1.5 bg-blue-500/20 text-blue-300 text-xs font-bold rounded-xl border border-blue-500/20">Awaiting Portfolio Settlement</span>
+              <span className="px-4 py-1.5 bg-slate-800/50 text-slate-400 text-xs font-bold rounded-xl border border-slate-700">
+                {collectionsData.length} Accounts Active
+              </span>
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-6">
-          <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center shrink-0">
-            <CalendarClock className="w-8 h-8 text-amber-600" />
-          </div>
-          <div>
-            <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">Active Accounts</p>
-            <h3 className="text-2xl font-black text-slate-900">{collectionsData.length} Entities</h3>
-            <p className="text-[10px] text-slate-400 font-medium mt-1">Pending verification</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-6">
-          <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center shrink-0">
-            <Hash className="w-8 h-8 text-blue-600" />
-          </div>
-          <div>
-            <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">Aggregate Count</p>
-            <h3 className="text-2xl font-black text-slate-900">
-              {collectionsData.reduce((acc, curr) => acc + curr.count, 0)} Invoices
-            </h3>
-            <p className="text-[10px] text-slate-400 font-medium mt-1">Consolidated receivables</p>
           </div>
         </div>
       </div>

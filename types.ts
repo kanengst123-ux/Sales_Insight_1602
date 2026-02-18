@@ -3,6 +3,7 @@ export interface SaleRecord extends Record<string, any> {
   orderId: string;
   orderDate: string;
   customerName: string;
+  userName: string;
   segment: string;
   region: string;
   category: string;
@@ -31,6 +32,9 @@ export interface SalesAnalytics {
   salesByCategory: Record<string, number>;
   salesByRegion: Record<string, number>;
   salesByMonth: Record<string, number>;
+  salesByDay: Record<string, number>;
+  userSalesPastWeek: Record<string, number>;
+  userSalesPast30Days: Record<string, number>;
 }
 
 export interface InsightReport {
