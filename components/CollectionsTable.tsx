@@ -96,8 +96,8 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
               <thead>
                 <tr className="bg-slate-50/50">
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance Due</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
                 </tr>
               </thead>
@@ -110,15 +110,15 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Verified Account</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 w-px whitespace-nowrap">
-                       <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 inline-block">
-                        {item.user}
-                       </span>
-                    </td>
                     <td className="px-8 py-6 text-right">
                       <span className="text-xl font-black text-slate-900 tabular-nums">
                         ${item.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
+                    </td>
+                    <td className="px-8 py-6 w-px whitespace-nowrap">
+                       <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 inline-block">
+                        {item.user}
+                       </span>
                     </td>
                     <td className="px-8 py-6">
                       <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
@@ -128,10 +128,11 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
               </tbody>
               <tfoot className="bg-slate-50/80 border-t border-slate-200">
                 <tr>
-                  <td colSpan={2} className="px-8 py-8 text-sm font-black text-slate-500 uppercase tracking-widest">Consolidated Portfolio Total</td>
+                  <td className="px-8 py-8 text-sm font-black text-slate-500 uppercase tracking-widest">Consolidated Portfolio Total</td>
                   <td className="px-8 py-8 text-right text-3xl font-black text-slate-900 tabular-nums">
                     ${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
+                  <td className="w-px"></td>
                   <td></td>
                 </tr>
               </tfoot>
