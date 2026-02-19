@@ -96,7 +96,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
               <thead>
                 <tr className="bg-slate-50/50">
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance Due</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
                 </tr>
@@ -110,8 +110,8 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Verified Account</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6">
-                       <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200">
+                    <td className="px-8 py-6 w-px whitespace-nowrap">
+                       <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 inline-block">
                         {item.user}
                        </span>
                     </td>
