@@ -22,7 +22,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
   const itemKey = findKey(['productName', 'item']);
   const customerKey = findKey(['customerName', 'customer', 'customers']);
   const subtotalKey = 'subtotal'; // Virtual field from service
-  const quantityKey = findKey(['quantity', 'qty']);
+  const countKey = 'countValue'; // Derived from Column R in dataService
 
   const [config, setConfig] = useState<PivotConfig>({
     rowField: itemKey,
@@ -37,7 +37,17 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
     const rowTotals: Record<string, number> = {};
     let grandTotal = 0;
 
-    data.forEach((item) => {
+    const now = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+
+    // Filter for last 30 days
+    const filteredData = data.filter(item => {
+      const orderDate = new Date(item.orderDate);
+      return orderDate >= thirtyDaysAgo && orderDate <= now;
+    });
+
+    filteredData.forEach((item) => {
       const rowVal = String(item[config.rowField] ?? 'N/A');
       const colVal = 'Grand Total';
       
@@ -65,8 +75,8 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       sortedRows.sort((a, b) => (rowTotals[a] || 0) - (rowTotals[b] || 0));
     }
 
-    return { sortedRows, sortedCols, matrix, rowTotals, grandTotal };
-  }, [data, config, itemKey, customerKey, subtotalKey, quantityKey]);
+    return { sortedRows, sortedCols, matrix, rowTotals, grandTotal, filteredCount: filteredData.length };
+  }, [data, config, itemKey, customerKey, subtotalKey, countKey]);
 
   const formatValue = (val: number) => {
     const isCurrency = config.metric === subtotalKey;
@@ -120,9 +130,9 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
               onClick={() => setConfig({ ...config, metric: subtotalKey })} 
             />
             <SelectorButton 
-              label="Quantity" 
-              active={config.metric === quantityKey} 
-              onClick={() => setConfig({ ...config, metric: quantityKey })} 
+              label="Count" 
+              active={config.metric === countKey} 
+              onClick={() => setConfig({ ...config, metric: countKey })} 
             />
           </div>
         </div>
@@ -159,7 +169,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
                   {config.rowField === itemKey ? 'Product / Item' : 'Customer Entity'}
                 </th>
                 <th className="px-8 py-5 font-black text-blue-600 text-right uppercase tracking-widest text-[10px] bg-blue-50/30">
-                  {config.metric === subtotalKey ? 'Total Revenue (USD)' : 'Total Units'}
+                  {config.metric === subtotalKey ? 'Total Revenue (USD)' : 'Total Count (Col R)'}
                 </th>
               </tr>
             </thead>
@@ -180,7 +190,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
             </tbody>
             <tfoot className="bg-slate-900 text-white border-t-2 border-slate-800">
               <tr>
-                <td className="px-8 py-6 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900 italic">Portfolio Grand Total</td>
+                <td className="px-8 py-6 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900 italic">Portfolio Grand Total (30D)</td>
                 <td className="px-8 py-6 text-right font-black text-blue-400 tabular-nums text-2xl">
                   {formatValue(pivotData.grandTotal)}
                 </td>
@@ -192,7 +202,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       
       <div className="flex items-center gap-2 p-4 bg-blue-50 text-blue-700 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-blue-100">
         <Filter className="w-4 h-4 shrink-0" />
-        <span>Aggregating <b>{config.metric}</b> for <b>{pivotData.sortedRows.length}</b> unique entities.</span>
+        <span>Aggregating <b>{config.metric === subtotalKey ? 'Subtotal' : 'Count'}</b> for <b>{pivotData.sortedRows.length}</b> entities across <b>{pivotData.filteredCount}</b> transactions from the last 30 days.</span>
       </div>
     </div>
   );

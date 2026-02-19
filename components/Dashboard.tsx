@@ -15,22 +15,6 @@ interface DashboardProps {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899'];
 
-const KpiCard: React.FC<{ label: string; value: string; icon: React.ReactNode; trend: string; bgColor: string }> = ({ label, value, icon, trend, bgColor }) => (
-  <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group h-full flex flex-col justify-center">
-    <div className={`absolute top-0 right-0 w-24 h-24 ${bgColor} rounded-full -mr-8 -mt-8 opacity-20 group-hover:scale-110 transition-transform`} />
-    <div className="relative z-10">
-      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-white shadow-sm ring-1 ring-slate-100">
-        {icon}
-      </div>
-      <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">{label}</p>
-      <h3 className="text-3xl md:text-4xl font-black text-slate-900 mt-1">{value}</h3>
-      <p className="text-[10px] font-black text-emerald-600 bg-emerald-50 inline-block px-3 py-1 rounded-full mt-3 uppercase tracking-wider">
-        {trend}
-      </p>
-    </div>
-  </div>
-);
-
 const UserSalesChart: React.FC<{ title: string, sub: string, data: Record<string, number> }> = ({ title, sub, data }) => {
   // Fix: Explicitly convert values to Number to avoid TypeScript arithmetic operation errors
   const chartData = Object.entries(data)
@@ -90,17 +74,6 @@ const Dashboard: React.FC<DashboardProps> = ({ analytics, insights, isAnalyzing 
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700">
-      {/* KPI Section - Highlighted Single Card */}
-      <div className="grid grid-cols-1 gap-6">
-        <KpiCard 
-          label="Total Gross Revenue" 
-          value={`$${analytics.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          icon={<DollarSign className="w-6 h-6 text-blue-600" />}
-          trend="+12.5% Performance Growth"
-          bgColor="bg-blue-100"
-        />
-      </div>
-
       {/* AI Insights Section */}
       {(insights || isAnalyzing) && (
         <section className="bg-slate-900 text-white rounded-[2rem] p-6 md:p-10 shadow-2xl relative overflow-hidden border border-slate-700 ring-4 ring-blue-500/10">
@@ -169,7 +142,7 @@ const Dashboard: React.FC<DashboardProps> = ({ analytics, insights, isAnalyzing 
         {/* Daily Sales Bar Chart */}
         <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="font-black text-slate-800 text-sm md:text-lg uppercase tracking-tight">Revenue Trajectory</h3>
+            <h3 className="font-black text-slate-800 text-sm md:text-lg uppercase tracking-tight">每天銷售額</h3>
             <span className="text-[10px] font-black px-3 py-1 bg-blue-50 rounded-full text-blue-600 uppercase tracking-widest">Daily Sum (Subtotal)</span>
           </div>
           <div className="h-[250px] md:h-80 w-full">
@@ -209,16 +182,16 @@ const Dashboard: React.FC<DashboardProps> = ({ analytics, insights, isAnalyzing 
           </div>
         </div>
 
-        {/* Market Strength - Past 7 Days */}
+        {/* Market Strength (Sales 銷售額) - Past 7 Days */}
         <UserSalesChart 
-          title="Market Strength (7D)" 
+          title="Sales 銷售額 (7D)" 
           sub="Last 7 Days" 
           data={analytics.userSalesPastWeek} 
         />
 
-        {/* Market Strength - Past 30 Days */}
+        {/* Market Strength (Sales 銷售額) - Past 30 Days */}
         <UserSalesChart 
-          title="Market Strength (30D)" 
+          title="Sales 銷售額 (30D)" 
           sub="Last 30 Days" 
           data={analytics.userSalesPast30Days} 
         />

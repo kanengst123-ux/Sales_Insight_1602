@@ -29,26 +29,27 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
       return isLaterThanNow || (isUnpaidFlag && isConditionS);
     });
 
-    const grouped: Record<string, { total: number; count: number }> = {};
+    // Grouping by customer and keeping track of the user
+    const grouped: Record<string, { total: number; user: string }> = {};
     
     filtered.forEach(item => {
       const customer = String(item.customerName || 'Other Entities').trim();
       const amount = Number(item.subtotal) || 0;
+      const user = String(item.userName || 'Unknown').trim();
       
       if (!grouped[customer]) {
-        grouped[customer] = { total: 0, count: 0 };
+        grouped[customer] = { total: 0, user: user };
       }
       
       grouped[customer].total += amount;
-      grouped[customer].count += 1;
     });
 
     // Final array with strict numeric descending sort
     return Object.entries(grouped)
       .map(([customer, stats]) => ({ 
         customer, 
-        total: stats.total, 
-        count: stats.count 
+        user: stats.user,
+        total: stats.total
       }))
       .filter(item => item.total > 0)
       .sort((a, b) => b.total - a.total); 
@@ -57,9 +58,9 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
   const totalOutstanding = collectionsData.reduce((acc, curr) => acc + curr.total, 0);
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full">
       {/* KPI Section - Featuring only the primary metric */}
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-6 w-full">
         <div className="bg-slate-900 text-white p-8 md:p-10 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-8 opacity-10 transform translate-x-4 -translate-y-4 group-hover:translate-x-0 group-hover:translate-y-0 transition-transform">
             <Wallet size={160} />
@@ -77,7 +78,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden w-full">
         <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight">Accounts Receivable Breakdown</h3>
@@ -90,13 +91,12 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
         </div>
 
         {collectionsData.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-left table-auto">
               <thead>
                 <tr className="bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-20">Rank</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Items</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance Due</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
                 </tr>
@@ -105,18 +105,15 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
                 {collectionsData.map((item, index) => (
                   <tr key={item.customer} className="hover:bg-blue-50/30 transition-all group">
                     <td className="px-8 py-6">
-                      <span className={`flex items-center justify-center w-8 h-8 rounded-lg text-xs font-black ${index < 3 ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'bg-slate-100 text-slate-400'}`}>
-                        {index + 1}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6">
                       <div className="flex flex-col">
                         <span className="text-slate-900 font-black text-base group-hover:text-blue-600 transition-colors">{item.customer}</span>
                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Verified Account</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-center">
-                       <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[10px] font-black">{item.count}</span>
+                    <td className="px-8 py-6">
+                       <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200">
+                        {item.user}
+                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
                       <span className="text-xl font-black text-slate-900 tabular-nums">
@@ -131,7 +128,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
               </tbody>
               <tfoot className="bg-slate-50/80 border-t border-slate-200">
                 <tr>
-                  <td colSpan={3} className="px-8 py-8 text-sm font-black text-slate-500 uppercase tracking-widest">Consolidated Portfolio Total</td>
+                  <td colSpan={2} className="px-8 py-8 text-sm font-black text-slate-500 uppercase tracking-widest">Consolidated Portfolio Total</td>
                   <td className="px-8 py-8 text-right text-3xl font-black text-slate-900 tabular-nums">
                     ${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>

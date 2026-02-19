@@ -73,14 +73,14 @@ const App: React.FC = () => {
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'collections' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
       >
         <div className="shrink-0"><ReceiptText className="w-5 h-5" /></div>
-        <span className="truncate">Pending Collections</span>
+        <span className="truncate">及單+未到期票</span>
       </button>
       <button
         onClick={() => { setActiveTab('pivot'); setIsSidebarOpen(false); }}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'pivot' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
       >
         <div className="shrink-0"><TableIcon className="w-5 h-5" /></div>
-        <span className="truncate">Pivot Explorer</span>
+        <span className="truncate">過往三十天銷售記錄</span>
       </button>
       <button
         onClick={() => { setActiveTab('raw-data'); setIsSidebarOpen(false); }}
@@ -198,7 +198,7 @@ const App: React.FC = () => {
                 </span>
               </div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? 'Pivot Explorer' : activeTab === 'collections' ? 'Pending Collections' : 'Transaction Log'}
+                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : 'Transaction Log'}
               </h2>
             </div>
             

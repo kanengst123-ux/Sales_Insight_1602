@@ -117,6 +117,7 @@ const processRows = (rows: string[][]): SalesData => {
     subtotal: 9,    // J
     user: 10,       // K
     paid: 12,       // M
+    countCol: 17,   // R
     colS: 18        // S
   };
 
@@ -165,7 +166,8 @@ const processRows = (rows: string[][]): SalesData => {
       subtotal: recordSubtotal,
       paidStatus: getRaw(MAP.paid),
       paidDate: getRaw(MAP.paid),
-      colSValue: getRaw(MAP.colS)
+      colSValue: getRaw(MAP.colS),
+      countValue: parseNum(getRaw(MAP.countCol))
     };
   });
 
