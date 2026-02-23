@@ -6,7 +6,8 @@ import { SaleRecord, SalesAnalytics, InsightReport } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
-import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText } from 'lucide-react';
+import InactiveCustomers from './components/InactiveCustomers';
+import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
@@ -15,7 +16,7 @@ const App: React.FC = () => {
   const [insights, setInsights] = useState<InsightReport | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'raw-data'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'raw-data'>('dashboard');
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
@@ -74,6 +75,13 @@ const App: React.FC = () => {
       >
         <div className="shrink-0"><ReceiptText className="w-5 h-5" /></div>
         <span className="truncate">及單+未到期票</span>
+      </button>
+      <button
+        onClick={() => { setActiveTab('inactive'); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inactive' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
+      >
+        <div className="shrink-0"><UserX className="w-5 h-5" /></div>
+        <span className="truncate">7天以上冇落單</span>
       </button>
       <button
         onClick={() => { setActiveTab('pivot'); setIsSidebarOpen(false); }}
@@ -198,7 +206,7 @@ const App: React.FC = () => {
                 </span>
               </div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : 'Transaction Log'}
+                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : activeTab === 'inactive' ? '7天以上冇落單' : 'Transaction Log'}
               </h2>
             </div>
             
@@ -241,6 +249,8 @@ const App: React.FC = () => {
             <Dashboard analytics={analytics} insights={insights} isAnalyzing={analyzing} />
           ) : activeTab === 'collections' ? (
             <CollectionsTable data={records} />
+          ) : activeTab === 'inactive' ? (
+            <InactiveCustomers data={records} />
           ) : activeTab === 'pivot' ? (
             <PivotTable data={records} headers={headers} />
           ) : (
@@ -291,6 +301,13 @@ const App: React.FC = () => {
         >
           <ReceiptText className="w-6 h-6" />
           <span className="text-[9px] font-black uppercase tracking-widest">Dues</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('inactive')}
+          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'inactive' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
+        >
+          <UserX className="w-6 h-6" />
+          <span className="text-[9px] font-black uppercase tracking-widest">7天以上</span>
         </button>
         <button 
           onClick={() => setActiveTab('pivot')}

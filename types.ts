@@ -18,6 +18,8 @@ export interface SaleRecord extends Record<string, any> {
   paidDate: string;
   colSValue: string;
   countValue: number; // Derived from Column R
+  unit: string;
+  price: number;
 }
 
 export interface SalesData {

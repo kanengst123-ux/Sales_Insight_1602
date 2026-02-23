@@ -113,6 +113,10 @@ const processRows = (rows: string[][]): SalesData => {
   const cleanHeaders = headers.filter(h => h && h.trim());
 
   const MAP = {
+    item: 1,        // B
+    quantity: 3,    // D
+    unit: 4,        // E
+    price: 6,       // G
     customer: 7,    // H
     subtotal: 9,    // J
     user: 10,       // K
@@ -159,15 +163,17 @@ const processRows = (rows: string[][]): SalesData => {
       region: record.region || 'General',
       category: record.category || 'Products',
       subCategory: record.subCategory || '',
-      productName: record.productName || 'Standard Item',
+      productName: getRaw(MAP.item) || record.productName || 'Standard Item',
       sales: parseNum(getRaw(idx.sales)) || recordSubtotal,
-      quantity: parseInt(getRaw(idx.quantity).replace(/[^0-9]/g, '')) || 0,
+      quantity: parseInt(getRaw(MAP.quantity).replace(/[^0-9]/g, '')) || parseInt(getRaw(idx.quantity).replace(/[^0-9]/g, '')) || 0,
       profit: parseNum(getRaw(idx.profit)) || recordSubtotal * 0.15,
       subtotal: recordSubtotal,
       paidStatus: getRaw(MAP.paid),
       paidDate: getRaw(MAP.paid),
       colSValue: getRaw(MAP.colS),
-      countValue: parseNum(getRaw(MAP.countCol))
+      countValue: parseNum(getRaw(MAP.countCol)),
+      unit: getRaw(MAP.unit),
+      price: parseNum(getRaw(MAP.price))
     };
   });
 
