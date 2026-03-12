@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { SaleRecord } from '../types';
-import { Users, Clock, AlertCircle, ChevronRight, X } from 'lucide-react';
+import { Users, Clock, AlertCircle, ChevronRight, X, Search } from 'lucide-react';
 
 interface InactiveCustomersProps {
   data: SaleRecord[];
@@ -10,6 +10,9 @@ interface InactiveCustomersProps {
 const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [showNewCustomerPopup, setShowNewCustomerPopup] = useState(false);
 
   const inactiveData = useMemo(() => {
     const now = new Date();
@@ -45,6 +48,14 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
       .sort((a, b) => a.daysInactive - b.daysInactive); // Fewest days inactive first
   }, [data]);
 
+  const filteredInactiveData = useMemo(() => {
+    if (!appliedSearch.trim()) return inactiveData;
+    const term = appliedSearch.toLowerCase().trim();
+    return inactiveData.filter(item => 
+      item.customer.toLowerCase().includes(term)
+    );
+  }, [inactiveData, appliedSearch]);
+
   const customerDetails = useMemo(() => {
     if (!selectedCustomer) return [];
     
@@ -67,8 +78,44 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
     setIsModalOpen(true);
   };
 
+  const handleSearch = () => {
+    const term = searchInput.toLowerCase().trim();
+    if (term) {
+      const exists = inactiveData.some(item => item.customer.toLowerCase().includes(term));
+      if (!exists) {
+        setShowNewCustomerPopup(true);
+      }
+    }
+    setAppliedSearch(searchInput);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full relative">
+      {/* New Customer Popup */}
+      {showNewCustomerPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300 p-8 text-center">
+            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Users className="w-10 h-10 text-amber-600" />
+            </div>
+            <h3 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">新客!</h3>
+            <p className="text-slate-500 font-medium mb-8">This customer was not found in the inactive list.</p>
+            <button 
+              onClick={() => setShowNewCustomerPopup(false)}
+              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20 active:scale-95"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modal */}
       {isModalOpen && selectedCustomer && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -140,18 +187,39 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden w-full">
-        <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
+        <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight">Customer Retention Watchlist</h3>
             <p className="text-slate-500 text-xs font-medium mt-1">Customers whose last entry (Col A) was more than 7 days ago</p>
           </div>
+          
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Search customer..."
+                className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all w-full md:w-64"
+              />
+            </div>
+            <button 
+              onClick={handleSearch}
+              className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all active:scale-95 whitespace-nowrap"
+            >
+              Search
+            </button>
+          </div>
+
           <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-slate-200 text-[10px] font-black text-slate-600 uppercase tracking-widest shadow-sm">
             <Clock className="w-4 h-4 text-amber-500" />
             Ranked: Most Inactive
           </div>
         </div>
 
-        {inactiveData.length > 0 ? (
+        {filteredInactiveData.length > 0 ? (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-left table-auto">
               <thead>
@@ -163,7 +231,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {inactiveData.map((item) => (
+                {filteredInactiveData.map((item) => (
                   <tr key={item.customer} className="hover:bg-amber-50/30 transition-all group">
                     <td className="px-8 py-6">
                       <div 
