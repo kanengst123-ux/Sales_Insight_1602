@@ -81,8 +81,12 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
   const handleSearch = () => {
     const term = searchInput.toLowerCase().trim();
     if (term) {
-      const exists = inactiveData.some(item => item.customer.toLowerCase().includes(term));
-      if (!exists) {
+      // Search the entire Customer Column (Col H) from the raw data
+      const existsInTotalData = data.some(item => 
+        String(item.customerName || '').toLowerCase().includes(term)
+      );
+      
+      if (!existsInTotalData) {
         setShowNewCustomerPopup(true);
       }
     }
@@ -189,7 +193,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden w-full">
         <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h3 className="text-xl font-black text-slate-900 tracking-tight">Customer Retention Watchlist</h3>
+            <h3 className="text-xl font-black text-slate-900 tracking-tight">搜查鋪名</h3>
             <p className="text-slate-500 text-xs font-medium mt-1">Customers whose last entry (Col A) was more than 7 days ago</p>
           </div>
           

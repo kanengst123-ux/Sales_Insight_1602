@@ -1,5 +1,5 @@
 {
-  "name": "SalesInsight AI Dashboard",
-  "description": "A high-performance sales analytics dashboard that connects to Google Sheets, providing deep data visualization and AI-powered business insights using Gemini.",
+  "name": "榮昇銷售數據",
+  "description": "榮昇銷售數據分析儀表板，連接 Google Sheets 提供深度的數據可視化和業務洞察。",
   "requestFramePermissions": []
 }

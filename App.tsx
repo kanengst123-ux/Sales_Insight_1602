@@ -1,23 +1,20 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchSalesData, calculateAnalytics } from './services/dataService';
-import { getAIInsights } from './services/geminiService';
-import { SaleRecord, SalesAnalytics, InsightReport } from './types';
+import { SaleRecord, SalesAnalytics } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
 import InactiveCustomers from './components/InactiveCustomers';
-import { Layout, BarChart3, Database, MessageSquare, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX } from 'lucide-react';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
-  const [insights, setInsights] = useState<InsightReport | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'raw-data'>('dashboard');
-  const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
@@ -42,19 +39,6 @@ const App: React.FC = () => {
       setLoading(false);
     }
   }, []);
-
-  const runAnalysis = async () => {
-    if (!analytics) return;
-    setAnalyzing(true);
-    try {
-      const report = await getAIInsights(analytics);
-      setInsights(report);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
 
   useEffect(() => {
     loadData();
@@ -120,7 +104,7 @@ const App: React.FC = () => {
           <div className="p-1.5 bg-blue-600 rounded-lg">
             <BarChart3 className="w-5 h-5" />
           </div>
-          <span className="font-bold text-lg tracking-tight">SalesInsight</span>
+          <span className="font-bold text-lg tracking-tight">榮昇銷售數據</span>
         </div>
         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
           {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -143,7 +127,7 @@ const App: React.FC = () => {
           <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-600/20">
             <BarChart3 className="w-6 h-6" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">SalesInsight</h1>
+          <h1 className="text-xl font-bold tracking-tight">榮昇銷售數據</h1>
         </div>
 
         <nav className="flex-1 space-y-2">
@@ -191,7 +175,7 @@ const App: React.FC = () => {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-slate-800">
-           <p className="text-[10px] text-slate-500 font-medium text-center italic">SalesInsight v2.5 Pro</p>
+           <p className="text-[10px] text-slate-500 font-medium text-center italic">榮昇銷售數據 v2.5 Pro</p>
         </div>
       </aside>
 
@@ -210,16 +194,7 @@ const App: React.FC = () => {
               </h2>
             </div>
             
-            <div className="flex items-center gap-3">
-               <button
-                onClick={runAnalysis}
-                disabled={analyzing || !analytics}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black transition-all shadow-xl shadow-slate-200 active:scale-95 ${analyzing ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-slate-800 ring-4 ring-slate-900/5'}`}
-              >
-                {analyzing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MessageSquare className="w-5 h-5 text-blue-400" />}
-                {insights ? 'Refine AI Analysis' : 'Get AI Strategic Brief'}
-              </button>
-            </div>
+            {/* AI Analysis button removed */}
           </header>
 
           {error ? (
@@ -246,7 +221,7 @@ const App: React.FC = () => {
               </div>
             </div>
           ) : activeTab === 'dashboard' && analytics ? (
-            <Dashboard analytics={analytics} insights={insights} isAnalyzing={analyzing} />
+            <Dashboard analytics={analytics} />
           ) : activeTab === 'collections' ? (
             <CollectionsTable data={records} />
           ) : activeTab === 'inactive' ? (
