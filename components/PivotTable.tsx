@@ -177,34 +177,34 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-8 py-5 font-black text-slate-400 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 uppercase tracking-widest text-[10px]">
+                <th className="px-3 md:px-8 py-4 md:py-5 font-black text-slate-400 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 uppercase tracking-widest text-[9px] md:text-[10px] max-w-[120px] md:max-w-none truncate">
                   {config.rowField === itemKey ? 'Product / Item' : 'Customer Entity'}
                 </th>
                 {config.rowField === itemKey && (
-                  <th className="px-8 py-5 font-black text-slate-400 text-right uppercase tracking-widest text-[10px] border-r border-slate-200">
+                  <th className="px-3 md:px-8 py-4 md:py-5 font-black text-slate-400 text-right uppercase tracking-widest text-[9px] md:text-[10px] border-r border-slate-200 whitespace-nowrap">
                     Latest Price
                   </th>
                 )}
-                <th className="px-8 py-5 font-black text-blue-600 text-right uppercase tracking-widest text-[10px] bg-blue-50/30">
-                  {config.metric === subtotalKey ? 'Total Revenue (USD)' : 'Total Count (Col R)'}
+                <th className="px-3 md:px-8 py-4 md:py-5 font-black text-blue-600 text-right uppercase tracking-widest text-[9px] md:text-[10px] bg-blue-50/30 whitespace-nowrap">
+                  {config.metric === subtotalKey ? 'Total Revenue' : 'Total Count'}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pivotData.sortedRows.map((row, idx) => (
                 <tr key={row} className="hover:bg-slate-50/80 transition-colors group">
-                  <td className="px-8 py-5 font-black text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 group-hover:bg-slate-50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black text-slate-300 w-4">{idx + 1}</span>
-                      {row}
+                  <td className="px-3 md:px-8 py-4 md:py-5 font-black text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 group-hover:bg-slate-50 max-w-[120px] md:max-w-none truncate text-xs md:text-sm">
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <span className="text-[9px] md:text-[10px] font-black text-slate-300 w-3 md:w-4">{idx + 1}</span>
+                      <span className="truncate">{row}</span>
                     </div>
                   </td>
                   {config.rowField === itemKey && (
-                    <td className="px-8 py-5 text-right font-bold text-slate-600 border-r border-slate-100 tabular-nums">
+                    <td className="px-3 md:px-8 py-4 md:py-5 text-right font-bold text-slate-600 border-r border-slate-100 tabular-nums text-xs md:text-sm whitespace-nowrap">
                       ${(pivotData.latestPrices[row] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   )}
-                  <td className="px-8 py-5 text-right font-black text-slate-900 bg-slate-50/10 tabular-nums text-lg">
+                  <td className="px-3 md:px-8 py-4 md:py-5 text-right font-black text-slate-900 bg-slate-50/10 tabular-nums text-sm md:text-lg whitespace-nowrap">
                     {formatValue(pivotData.rowTotals[row])}
                   </td>
                 </tr>
@@ -212,9 +212,9 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
             </tbody>
             <tfoot className="bg-slate-900 text-white border-t-2 border-slate-800">
               <tr>
-                <td className="px-8 py-6 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900 italic">Portfolio Grand Total (30D)</td>
+                <td className="px-3 md:px-8 py-4 md:py-6 font-black uppercase tracking-widest text-[9px] md:text-[10px] sticky left-0 bg-slate-900 italic max-w-[120px] md:max-w-none truncate">Grand Total (30D)</td>
                 {config.rowField === itemKey && <td className="bg-slate-900 border-r border-slate-800"></td>}
-                <td className="px-8 py-6 text-right font-black text-blue-400 tabular-nums text-2xl">
+                <td className="px-3 md:px-8 py-4 md:py-6 text-right font-black text-blue-400 tabular-nums text-lg md:text-2xl whitespace-nowrap">
                   {formatValue(pivotData.grandTotal)}
                 </td>
               </tr>
