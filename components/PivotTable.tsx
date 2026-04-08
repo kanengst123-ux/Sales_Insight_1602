@@ -47,6 +47,9 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       return orderDate >= thirtyDaysAgo && orderDate <= now;
     });
 
+    const latestPrices: Record<string, number> = {};
+    const latestDates: Record<string, Date> = {};
+
     filteredData.forEach((item) => {
       const rowVal = String(item[config.rowField] ?? 'N/A');
       const colVal = 'Grand Total';
@@ -61,6 +64,15 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       
       rowTotals[rowVal] = (rowTotals[rowVal] || 0) + metricVal;
       grandTotal += metricVal;
+
+      // Track latest price for items
+      if (config.rowField === itemKey) {
+        const orderDate = new Date(item.orderDate);
+        if (!latestDates[rowVal] || orderDate > latestDates[rowVal]) {
+          latestDates[rowVal] = orderDate;
+          latestPrices[rowVal] = item.price;
+        }
+      }
     });
 
     let sortedRows = Array.from(rows);
@@ -75,7 +87,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
       sortedRows.sort((a, b) => (rowTotals[a] || 0) - (rowTotals[b] || 0));
     }
 
-    return { sortedRows, sortedCols, matrix, rowTotals, grandTotal, filteredCount: filteredData.length };
+    return { sortedRows, sortedCols, matrix, rowTotals, grandTotal, filteredCount: filteredData.length, latestPrices };
   }, [data, config, itemKey, customerKey, subtotalKey, countKey]);
 
   const formatValue = (val: number) => {
@@ -168,6 +180,11 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
                 <th className="px-8 py-5 font-black text-slate-400 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 uppercase tracking-widest text-[10px]">
                   {config.rowField === itemKey ? 'Product / Item' : 'Customer Entity'}
                 </th>
+                {config.rowField === itemKey && (
+                  <th className="px-8 py-5 font-black text-slate-400 text-right uppercase tracking-widest text-[10px] border-r border-slate-200">
+                    Latest Price
+                  </th>
+                )}
                 <th className="px-8 py-5 font-black text-blue-600 text-right uppercase tracking-widest text-[10px] bg-blue-50/30">
                   {config.metric === subtotalKey ? 'Total Revenue (USD)' : 'Total Count (Col R)'}
                 </th>
@@ -182,6 +199,11 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
                       {row}
                     </div>
                   </td>
+                  {config.rowField === itemKey && (
+                    <td className="px-8 py-5 text-right font-bold text-slate-600 border-r border-slate-100 tabular-nums">
+                      ${(pivotData.latestPrices[row] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                  )}
                   <td className="px-8 py-5 text-right font-black text-slate-900 bg-slate-50/10 tabular-nums text-lg">
                     {formatValue(pivotData.rowTotals[row])}
                   </td>
@@ -191,6 +213,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers }) => {
             <tfoot className="bg-slate-900 text-white border-t-2 border-slate-800">
               <tr>
                 <td className="px-8 py-6 font-black uppercase tracking-widest text-[10px] sticky left-0 bg-slate-900 italic">Portfolio Grand Total (30D)</td>
+                {config.rowField === itemKey && <td className="bg-slate-900 border-r border-slate-800"></td>}
                 <td className="px-8 py-6 text-right font-black text-blue-400 tabular-nums text-2xl">
                   {formatValue(pivotData.grandTotal)}
                 </td>
