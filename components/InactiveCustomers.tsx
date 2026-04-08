@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { SaleRecord } from '../types';
 import { Users, Clock, AlertCircle, ChevronRight, X, Search } from 'lucide-react';
 
@@ -13,6 +13,41 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [showNewCustomerPopup, setShowNewCustomerPopup] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const allCustomers = useMemo(() => {
+    const latestUserMap: Record<string, string> = {};
+    data.forEach(item => {
+      const customer = String(item.customerName || 'Unknown').trim();
+      const user = String(item.userName || 'Unknown').trim();
+      const date = new Date(item.orderDate);
+      
+      // We want the most recent user associated with this customer
+      if (!latestUserMap[customer]) {
+        latestUserMap[customer] = user;
+      }
+    });
+    return Object.entries(latestUserMap).map(([name, user]) => ({ name, user }));
+  }, [data]);
+
+  const suggestions = useMemo(() => {
+    if (!searchInput.trim()) return [];
+    const term = searchInput.toLowerCase().trim();
+    return allCustomers
+      .filter(c => c.name.toLowerCase().includes(term))
+      .slice(0, 8); // Limit to 8 suggestions
+  }, [allCustomers, searchInput]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.search-container')) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const inactiveData = useMemo(() => {
     const now = new Date();
@@ -198,16 +233,48 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
           </div>
           
           <div className="flex items-center gap-2">
-            <div className="relative">
+            <div className="relative search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input 
                 type="text"
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
                 onKeyDown={handleKeyPress}
                 placeholder="Search customer..."
                 className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all w-full md:w-64"
               />
+              
+              {/* Suggestions Dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-[80] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="p-2 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Suggestions</span>
+                    <button onClick={() => setShowSuggestions(false)} className="p-1 hover:bg-slate-200 rounded-md transition-colors">
+                      <X className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setSearchInput(s.name);
+                          setAppliedSearch(s.name);
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-amber-50 transition-colors flex flex-col border-b border-slate-50 last:border-0"
+                      >
+                        <span className="text-sm font-bold text-slate-900">{s.name}</span>
+                        <span className="text-[10px] text-slate-500 font-medium">User: {s.user}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <button 
               onClick={handleSearch}
