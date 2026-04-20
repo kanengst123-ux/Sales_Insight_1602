@@ -6,7 +6,8 @@ import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
 import InactiveCustomers from './components/InactiveCustomers';
-import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX } from 'lucide-react';
+import CustomerGrades from './components/CustomerGrades';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
@@ -14,7 +15,7 @@ const App: React.FC = () => {
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'raw-data'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
@@ -75,11 +76,11 @@ const App: React.FC = () => {
         <span className="truncate">過往三十天銷售記錄</span>
       </button>
       <button
-        onClick={() => { setActiveTab('raw-data'); setIsSidebarOpen(false); }}
-        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'raw-data' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
+        onClick={() => { setActiveTab('grades'); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'grades' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
       >
-        <div className="shrink-0"><Database className="w-5 h-5" /></div>
-        <span className="truncate">Source Data</span>
+        <div className="shrink-0"><Award className="w-5 h-5" /></div>
+        <span className="truncate">客戶等級</span>
       </button>
     </>
   );
@@ -190,7 +191,7 @@ const App: React.FC = () => {
                 </span>
               </div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : activeTab === 'inactive' ? '7天以上冇落單' : 'Transaction Log'}
+                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : activeTab === 'inactive' ? '7天以上冇落單' : activeTab === 'grades' ? '客戶等級' : 'Transaction Log'}
               </h2>
             </div>
             
@@ -226,6 +227,8 @@ const App: React.FC = () => {
             <CollectionsTable data={records} />
           ) : activeTab === 'inactive' ? (
             <InactiveCustomers data={records} />
+          ) : activeTab === 'grades' ? (
+            <CustomerGrades />
           ) : activeTab === 'pivot' ? (
             <PivotTable data={records} headers={headers} />
           ) : (
@@ -292,11 +295,11 @@ const App: React.FC = () => {
           <span className="text-[9px] font-black uppercase tracking-widest">Pivot</span>
         </button>
         <button 
-          onClick={() => setActiveTab('raw-data')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'raw-data' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
+          onClick={() => setActiveTab('grades')}
+          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'grades' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
         >
-          <Database className="w-6 h-6" />
-          <span className="text-[9px] font-black uppercase tracking-widest">Data</span>
+          <Award className="w-6 h-6" />
+          <span className="text-[9px] font-black uppercase tracking-widest">等級</span>
         </button>
       </nav>
       <div className="h-20 md:hidden" />

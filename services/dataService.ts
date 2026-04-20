@@ -10,7 +10,7 @@ const getExportUrl = (id: string) => {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
 };
 
-const parseCSV = (text: string): string[][] => {
+export const parseCSV = (text: string): string[][] => {
   const result: string[][] = [];
   let row: string[] = [];
   let currentField = '';
@@ -78,6 +78,26 @@ const parseNum = (val: any): number => {
   const cleaned = val.toString().replace(/[$,\s]/g, '');
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
+};
+
+export const fetchCustomerGrades = async (): Promise<any[]> => {
+  const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
+  try {
+    const response = await fetch(URL);
+    if (!response.ok) throw new Error('Failed to fetch customer grades');
+    const text = await response.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) return [];
+
+    return rows.slice(1).map(row => ({
+      customer: row[0] || '',
+      sales: row[1] || '',
+      category: row[2] || ''
+    }));
+  } catch (error) {
+    console.error('Error fetching customer grades:', error);
+    return [];
+  }
 };
 
 export const fetchSalesData = async (customId?: string): Promise<{ data: SalesData; source: 'cloud' | 'local' }> => {
