@@ -126,16 +126,16 @@ const CustomerGrades: React.FC = () => {
           <table className="w-full text-left table-auto">
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer (Col A)</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">A</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">B</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">C</th>
+                <th className="px-4 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer</th>
+                <th className="px-2 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-12 md:w-24">A</th>
+                <th className="px-2 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-12 md:w-24">B</th>
+                <th className="px-2 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-12 md:w-24">C</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-8 py-20 text-center text-slate-400">
+                  <td colSpan={4} className="px-4 md:px-8 py-20 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-3">
                       <Users className="w-10 h-10 opacity-20" />
                       <p className="text-xs font-bold uppercase tracking-widest">No customers found for {selectedSales}</p>
@@ -145,20 +145,20 @@ const CustomerGrades: React.FC = () => {
               ) : (
                 filteredItems.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-8 py-6">
-                      <span className="text-slate-900 font-bold text-base">{item.customer}</span>
+                    <td className="px-4 md:px-8 py-4 md:py-6">
+                      <span className="text-slate-900 font-bold text-sm md:text-base leading-tight block line-clamp-2 md:line-clamp-none">{item.customer}</span>
                     </td>
                     {['A', 'B', 'C'].map(grade => (
-                      <td key={grade} className="px-8 py-6 text-center">
+                      <td key={grade} className="px-1 md:px-8 py-4 md:py-6 text-center">
                         <button
                           onClick={() => handleGradeChange(item.customer, grade)}
-                          className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center mx-auto ${
+                          className={`w-8 h-8 md:w-10 md:h-10 rounded-full border-2 transition-all flex items-center justify-center mx-auto ${
                             tempGrades[item.customer] === grade
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20 scale-110'
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105 md:scale-110'
                             : 'bg-white border-slate-200 text-slate-300 hover:border-slate-300'
                           }`}
                         >
-                          {tempGrades[item.customer] === grade ? <CheckCircle2 className="w-5 h-5" /> : <span className="font-bold text-xs uppercase">{grade}</span>}
+                          {tempGrades[item.customer] === grade ? <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" /> : <span className="font-bold text-[10px] md:text-xs uppercase">{grade}</span>}
                         </button>
                       </td>
                     ))}
