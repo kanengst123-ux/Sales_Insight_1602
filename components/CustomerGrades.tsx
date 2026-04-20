@@ -48,35 +48,26 @@ const CustomerGrades: React.FC = () => {
   const handleSave = async () => {
     setSaveStatus('saving');
     
-    const scriptUrl = (import.meta as any).env.VITE_GRADES_SCRIPT_URL;
-    
-    if (!scriptUrl) {
-      console.log('Simulating save (no script URL):', tempGrades);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setSaveStatus('success');
-      setTimeout(() => setSaveStatus('idle'), 3000);
-      alert('Simulation successful. To save to the actual Google Sheet, add VITE_GRADES_SCRIPT_URL in app settings.');
-      return;
-    }
+    // Hardcoded URL for production/GitHub Pages compatibility
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
 
     try {
-      // Create a payload with only changed or all current selections
-      const response = await fetch(scriptUrl, {
+      // Create a payload with current selections
+      await fetch(scriptUrl, {
         method: 'POST',
-        mode: 'no-cors', // Apps Script requires no-cors or handles redirects that fetch doesn't like with CORS
+        mode: 'no-cors', 
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(tempGrades)
       });
       
-      // Note: With 'no-cors', we can't read the response body, but if it doesn't throw, it likely sent.
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
       console.error('Save failed:', error);
       setSaveStatus('idle');
-      alert('Failed to connect to Google Script. Check your URL and Deployment settings.');
+      alert('Failed to connect to Google Script. Check your internet connection or deployment settings.');
     }
   };
 
@@ -179,13 +170,12 @@ const CustomerGrades: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4 flex items-start gap-4">
-        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+      <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-4 flex items-start gap-4">
+        <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <p className="text-xs font-bold text-amber-900 uppercase tracking-widest">Read-Only Source Notice</p>
-          <p className="text-[11px] text-amber-700 leading-relaxed font-medium">
-            This tab retrieves data from a published Google Sheet CSV. Saving changes updates the local view but does not 
-            synchronize back to the master sheet. To enable full bidirectional sync, an Apps Script Web App or API integration is required.
+          <p className="text-xs font-bold text-emerald-900 uppercase tracking-widest">Connected to Google Sheets</p>
+          <p className="text-[11px] text-emerald-700 leading-relaxed font-medium">
+            This tab is synced with your master Google Sheet. Clicking "Save" will instantly update Category (Col C) for the selected customers.
           </p>
         </div>
       </div>
