@@ -35,8 +35,20 @@ const CustomerGrades: React.FC = () => {
   }, []);
 
   const filteredItems = useMemo(() => {
-    return data.filter(item => item.sales.toUpperCase() === selectedSales.toUpperCase());
-  }, [data, selectedSales]);
+    return data
+      .filter(item => item.sales.toUpperCase() === selectedSales.toUpperCase())
+      .sort((a, b) => {
+        const gradeA = tempGrades[a.customer]?.trim() || '';
+        const gradeB = tempGrades[b.customer]?.trim() || '';
+        
+        // If one is unranked and the other is ranked
+        if (!gradeA && gradeB) return -1;
+        if (gradeA && !gradeB) return 1;
+        
+        // Secondary sort by customer name
+        return a.customer.localeCompare(b.customer);
+      });
+  }, [data, selectedSales, tempGrades]);
 
   const handleGradeChange = (customer: string, grade: string) => {
     setTempGrades(prev => ({
