@@ -22,12 +22,14 @@ const CustomerGrades: React.FC = () => {
     const loadGrades = async () => {
       setLoading(true);
       const grades = await fetchCustomerGrades();
-      setData(grades);
       
       const initialTemp: Record<string, string> = {};
       grades.forEach(item => {
         initialTemp[item.customer] = item.category;
       });
+      
+      // Batch these updates to avoid redundant expensive re-sorts during initialization
+      setData(grades);
       setTempGrades(initialTemp);
       setLoading(false);
     };
@@ -35,20 +37,28 @@ const CustomerGrades: React.FC = () => {
   }, []);
 
   const filteredItems = useMemo(() => {
-    return data
-      .filter(item => item.sales.toUpperCase() === selectedSales.toUpperCase())
-      .sort((a, b) => {
-        const gradeA = tempGrades[a.customer]?.trim() || '';
-        const gradeB = tempGrades[b.customer]?.trim() || '';
-        
-        // If one is unranked and the other is ranked
-        if (!gradeA && gradeB) return -1;
-        if (gradeA && !gradeB) return 1;
-        
-        // Secondary sort by customer name
-        return a.customer.localeCompare(b.customer);
-      });
-  }, [data, selectedSales, tempGrades]);
+    const salesFilter = selectedSales.toUpperCase();
+    
+    // 1. Filter by sales person
+    const filtered = data.filter(item => item.sales.toUpperCase() === salesFilter);
+    
+    // 2. Sort the data
+    // Optimization: We sort based on the category in the master data (initial state)
+    // rather than the temporary state to prevent the list from jumping while the user is clicking.
+    return filtered.sort((a, b) => {
+      const categoryA = a.category?.trim() || '';
+      const categoryB = b.category?.trim() || '';
+      
+      // Prioritize unranked (empty string)
+      if (categoryA === '' && categoryB !== '') return -1;
+      if (categoryA !== '' && categoryB === '') return 1;
+      
+      // Secondary sort by name
+      if (a.customer < b.customer) return -1;
+      if (a.customer > b.customer) return 1;
+      return 0;
+    });
+  }, [data, selectedSales]); // Removed tempGrades from dependencies
 
   const handleGradeChange = (customer: string, grade: string) => {
     setTempGrades(prev => ({

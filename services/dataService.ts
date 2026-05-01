@@ -82,8 +82,9 @@ const parseNum = (val: any): number => {
 
 export const fetchCustomerGrades = async (): Promise<any[]> => {
   const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
+  const cacheBuster = `&t=${Date.now()}`;
   try {
-    const response = await fetch(URL);
+    const response = await fetch(URL + cacheBuster);
     if (!response.ok) throw new Error('Failed to fetch customer grades');
     const text = await response.text();
     const rows = parseCSV(text);
