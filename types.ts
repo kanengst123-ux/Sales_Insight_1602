@@ -56,3 +56,18 @@ export interface PivotConfig {
   metric: PivotMetric;
   sortOrder: SortOrder;
 }
+
+export interface Product {
+  name: string;
+  price?: number;
+}
+
+export interface OrderItem {
+  id: string;
+  name: string;
+  quantity: number; // This is the value displayed in the input
+  price: number;
+  isOuterBox: boolean; // Toggle state
+  unitsPerBox: number | null; // Extracted from name e.g. "6/箱" -> 6
+  outerBoxUnit: string | null; // Extracted from name e.g. "6/箱" -> "箱", "10/條" -> "條"
+}

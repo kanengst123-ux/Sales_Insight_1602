@@ -1,5 +1,5 @@
 
-import { SaleRecord, SalesAnalytics, SalesData } from '../types';
+import { SaleRecord, SalesAnalytics, SalesData, Product } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
 
@@ -64,9 +64,10 @@ export const parseCSV = (text: string): string[][] => {
 };
 
 const findColumn = (headers: (string | undefined)[], keywords: string[]): number => {
-  const normalizedHeaders = headers.map(h => h?.toLowerCase().replace(/[^a-z0-9]/g, '') || '');
+  const normalizedHeaders = headers.map(h => h?.toLowerCase().trim() || '');
   for (const keyword of keywords) {
-    const idx = normalizedHeaders.findIndex(h => h.includes(keyword.toLowerCase()));
+    const kw = keyword.toLowerCase().trim();
+    const idx = normalizedHeaders.findIndex(h => h.includes(kw));
     if (idx !== -1) return idx;
   }
   return -1;
@@ -93,7 +94,8 @@ export const fetchCustomerGrades = async (): Promise<any[]> => {
     return rows.slice(1).map(row => ({
       customer: row[0] || '',
       sales: row[1] || '',
-      category: row[2] || ''
+      category: row[2] || '',
+      district: row[3] || '' // Col D
     }));
   } catch (error) {
     console.error('Error fetching customer grades:', error);
@@ -262,4 +264,80 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 
   analytics.averageOrderValue = analytics.totalOrders > 0 ? analytics.totalSales / analytics.totalOrders : 0;
   return analytics;
+};
+
+export const fetchProducts = async (customId?: string): Promise<Product[]> => {
+  const targetId = customId || DEFAULT_SHEET_ID;
+  const DATA_URL = getExportUrl(targetId);
+
+  try {
+    const response = await fetch(DATA_URL);
+    if (!response.ok) throw new Error('Cloud fetch failed');
+    const text = await response.text();
+    const rows = parseCSV(text);
+    if (rows.length < 1) return [];
+    
+    // Find the header row (the one that contains "Title" or has the most content)
+    let headerRowIdx = 0;
+    let titleIdx = -1;
+    
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const idx = findColumn(rows[i], ['Title', 'Title(Col C)', 'productName', 'item', 'Name']);
+      if (idx !== -1) {
+        headerRowIdx = i;
+        titleIdx = idx;
+        break;
+      }
+    }
+    
+    // Fallback if no header found
+    if (titleIdx === -1) {
+      headerRowIdx = 0;
+      titleIdx = 2; // User said Col C
+    }
+
+    const products = new Set<string>();
+    rows.slice(headerRowIdx + 1).forEach(row => {
+      const productName = row[titleIdx];
+      if (productName && productName.trim()) {
+        const trimmed = productName.trim();
+        // Skip header repeat or empty data
+        if (trimmed.toLowerCase() === 'title') return;
+        
+        // Basic check to skip things that look like pure short numbers if they were accidentally picked up
+        // but allowing longer numbers if they might be product names
+        if (trimmed.length > 2 || !/^\d+$/.test(trimmed)) {
+          products.add(trimmed);
+        }
+      }
+    });
+    
+    return Array.from(products).sort().map(name => ({ name }));
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    // Fallback to local data
+    try {
+      const localResponse = await fetch('./data.csv');
+      if (!localResponse.ok) return [];
+      const text = await localResponse.text();
+      const rows = parseCSV(text);
+      if (rows.length < 2) return [];
+      
+      const headers = rows[0];
+      const titleIdx = findColumn(headers, ['productName', 'Title', 'item', 'Name']) !== -1 
+        ? findColumn(headers, ['productName', 'Title', 'item', 'Name'])
+        : 7;
+      
+      const products = new Set<string>();
+      rows.slice(1).forEach(row => {
+        const productName = row[titleIdx];
+        if (productName && productName.trim()) {
+          products.add(productName.trim());
+        }
+      });
+      return Array.from(products).sort().map(name => ({ name }));
+    } catch (e) {
+      return [];
+    }
+  }
 };

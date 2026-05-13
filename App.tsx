@@ -7,7 +7,8 @@ import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
 import InactiveCustomers from './components/InactiveCustomers';
 import CustomerGrades from './components/CustomerGrades';
-import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award } from 'lucide-react';
+import OrderEntry from './components/OrderEntry';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
@@ -15,7 +16,7 @@ const App: React.FC = () => {
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
@@ -98,8 +99,12 @@ const App: React.FC = () => {
     );
   }
 
+  if (activeTab === 'order') {
+    return <OrderEntry onBack={() => setActiveTab('dashboard')} />;
+  }
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col md:flex-row relative">
       <header className="md:hidden bg-slate-900 text-white p-4 flex items-center justify-between sticky top-0 z-30 shadow-md">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-blue-600 rounded-lg">
@@ -303,6 +308,15 @@ const App: React.FC = () => {
         </button>
       </nav>
       <div className="h-20 md:hidden" />
+
+      {/* Floating Action Button for order entry */}
+      <button
+        onClick={() => setActiveTab('order')}
+        className="fixed bottom-24 right-6 md:bottom-10 md:right-10 z-40 bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 group flex items-center gap-2 overflow-hidden max-w-[56px] hover:max-w-[150px]"
+      >
+        <Plus className="w-6 h-6 shrink-0" />
+        <span className="font-black text-xs uppercase tracking-widest whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">落單</span>
+      </button>
     </div>
   );
 };
