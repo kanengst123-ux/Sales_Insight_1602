@@ -3,27 +3,47 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts } from '../services/dataService';
-import { Product, OrderItem } from '../types';
+import { Product, OrderItem, Customer, SavedOrder } from '../types';
 
 interface OrderEntryProps {
   onBack: () => void;
+  onSaveOrder?: (order: SavedOrder) => void;
+  editingOrder?: SavedOrder | null;
 }
 
-interface Customer {
-  customer: string;
-  sales: string;
-  category: string;
-  district: string;
-}
-
-const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrder }) => {
+  const [selectedRole, setSelectedRole] = useState<string | null>(() => {
+    if (editingOrder?.salesName) return editingOrder.salesName;
+    return localStorage.getItem('ws_selected_role');
+  });
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
+  const [remark, setRemark] = useState(editingOrder?.remark || '');
+  const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
   const [favorites, setFavorites] = useState<Product[]>([]);
+
+  // Load favorites when role changes or on mount
+  useEffect(() => {
+    if (!selectedRole) {
+      setFavorites([]);
+      return;
+    }
+    const key = `ws_favorites_${selectedRole}`;
+    const savedFavorites = localStorage.getItem(key);
+    if (savedFavorites) {
+      try {
+        setFavorites(JSON.parse(savedFavorites));
+      } catch (e) {
+        console.error('Failed to parse favorites', e);
+        setFavorites([]);
+      }
+    } else {
+      setFavorites([]);
+    }
+  }, [selectedRole]);
   const [activeTab, setActiveTab] = useState<'order' | 'favorites'>('order');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,10 +59,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
     
     customers.forEach(c => {
       const isVisible = selectedRole === 'Admin' 
-        ? c.customer === '落鋪'
+        ? c.name === '落鋪'
         : c.sales.toUpperCase() === (selectedRole || '').toUpperCase();
       
-      if (isVisible) {
+      if (isVisible && c.district) {
         if (counts[c.district] !== undefined) {
           counts[c.district]++;
         }
@@ -61,16 +81,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
       setCustomers(customerData);
       setProducts(productData);
       
-      // Load favorites from localStorage
-      const savedFavorites = localStorage.getItem('ws_favorites');
-      if (savedFavorites) {
-        try {
-          setFavorites(JSON.parse(savedFavorites));
-        } catch (e) {
-          console.error('Failed to parse favorites', e);
-        }
-      }
-      
       setLoading(false);
     };
     loadData();
@@ -78,8 +88,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
 
   // Save favorites to localStorage
   useEffect(() => {
-    localStorage.setItem('ws_favorites', JSON.stringify(favorites));
-  }, [favorites]);
+    if (selectedRole) {
+      localStorage.setItem(`ws_favorites_${selectedRole}`, JSON.stringify(favorites));
+    }
+  }, [favorites, selectedRole]);
+
+  // Save selected role to localStorage
+  useEffect(() => {
+    if (selectedRole) {
+      localStorage.setItem('ws_selected_role', selectedRole);
+    }
+  }, [selectedRole]);
 
   // Reset district search when role changes
   useEffect(() => {
@@ -104,12 +123,16 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
 
   const handleAddProduct = (product: Product) => {
     const boxInfo = parseOuterBoxInfo(product.name);
+    // Determine price based on selected customer's grade
+    const grade = selectedCustomerInfo?.grade || 'C';
+    const tieredPrice = product.prices ? product.prices[grade] : (product.price || 0);
+
     const newItem: OrderItem = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: product.name,
       // Default to 1 outer (either parsed or fallback 12) per user request
       quantity: boxInfo ? boxInfo.units : 12,
-      price: product.price || 0,
+      price: tieredPrice,
       isOuterBox: true, // Start in outer mode
       unitsPerBox: boxInfo ? boxInfo.units : 12,
       outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
@@ -140,6 +163,28 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
     return favorites.some(p => p.name === productName);
   };
 
+  const handleFinalSave = () => {
+    if (!selectedCustomer || selectedItems.length === 0) return;
+    
+    const totalAmount = selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    
+    const order: SavedOrder = {
+      id: editingOrder?.id || `${Date.now()}`,
+      date: editingOrder?.date || new Date().toISOString(),
+      customerName: selectedCustomer,
+      orderAmount: totalAmount,
+      salesName: selectedRole || 'Unknown',
+      remark: remark,
+      items: selectedItems
+    };
+    
+    onSaveOrder?.(order);
+    // Reset state
+    setSelectedItems([]);
+    setRemark('');
+    setSelectedCustomer(null);
+  };
+
   const filteredProducts = useMemo(() => {
     if (!productSearchQuery.trim()) return [];
     const query = productSearchQuery.toLowerCase();
@@ -151,7 +196,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
     
     let baseList: Customer[] = [];
     if (selectedRole === 'Admin') {
-      baseList = customers.filter(c => c.customer === '落鋪');
+      baseList = customers.filter(c => c.name === '落鋪');
     } else {
       baseList = customers.filter(c => c.sales.toUpperCase() === selectedRole.toUpperCase());
     }
@@ -164,13 +209,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
 
     const query = searchQuery.toLowerCase();
     return baseList.filter(c => 
-      c.customer.toLowerCase().includes(query) || 
+      c.name.toLowerCase().includes(query) || 
       (selectedRole === 'Admin' && c.sales.toLowerCase().includes(query))
     );
   }, [customers, selectedRole, searchQuery, selectedDistrict]);
 
   const selectedCustomerInfo = useMemo(() => {
-    return customers.find(c => c.customer === selectedCustomer);
+    return customers.find(c => c.name === selectedCustomer);
   }, [customers, selectedCustomer]);
 
   if (selectedCustomer) {
@@ -217,10 +262,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                   </div>
                 ) : (
                   filteredProducts.map((p, idx) => (
-                    <button
+                    <div
                       key={idx}
                       onClick={() => handleAddProduct(p)}
-                      className="w-full flex items-center justify-between p-3 hover:bg-blue-50 border-b border-slate-50 last:border-none transition-colors group text-left"
+                      className="w-full flex items-center justify-between p-3 hover:bg-blue-50 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-2 flex-1 truncate pr-2">
                         <button
@@ -239,7 +284,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                       <div className="bg-slate-100 p-1 rounded-lg group-hover:bg-blue-100 transition-colors">
                         <Plus className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
                       </div>
-                    </button>
+                    </div>
                   ))
                 )}
               </div>
@@ -289,10 +334,26 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                   <div className="max-w-md mx-auto">
                     {/* Selected Products List */}
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between px-1">
-                        <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 truncate flex-1 pr-4">
-                          <span className="truncate">{selectedCustomer}</span> <span className="flex items-center justify-center min-w-[16px] h-4 bg-slate-200 text-slate-600 text-[8px] rounded-full px-1 flex-shrink-0">{selectedItems.length}</span>
-                        </h4>
+                    <div className="flex items-center justify-between px-1">
+                        <div className="flex flex-col flex-1 pr-4 min-w-0">
+                          <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 truncate">
+                            <span className="truncate">{selectedCustomer}</span> 
+                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex-shrink-0">Grade {selectedCustomerInfo?.grade}</span>
+                            <span className="flex items-center justify-center min-w-[16px] h-4 bg-slate-200 text-slate-600 text-[8px] rounded-full px-1 flex-shrink-0">{selectedItems.length}</span>
+                          </h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <button 
+                              onClick={() => setShowRemarkInput(!showRemarkInput)}
+                              className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest transition-colors ${remark ? 'text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}
+                            >
+                              <Check className={`w-3 h-3 ${remark ? 'block' : 'hidden'}`} />
+                              {remark ? '已添加備註' : '+ 備註'}
+                            </button>
+                            {remark && (
+                              <button onClick={() => setRemark('')} className="text-[8px] text-red-400 hover:text-red-600">Clear</button>
+                            )}
+                          </div>
+                        </div>
                         {selectedItems.length > 0 && (
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <button 
@@ -302,6 +363,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                               CLEAR ALL
                             </button>
                             <button 
+                              onClick={handleFinalSave}
                               className="bg-green-500 hover:bg-green-600 text-white p-1.5 rounded-lg shadow-lg shadow-green-500/20 active:scale-95 transition-all group"
                               title="Place Order"
                             >
@@ -310,6 +372,21 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                           </div>
                         )}
                       </div>
+
+                      {showRemarkInput && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          className="px-1 mt-2 mb-4 overflow-hidden"
+                        >
+                          <textarea
+                            placeholder="Input text remarks (Sales name, specific delivery instructions etc.)..."
+                            value={remark}
+                            onChange={(e) => setRemark(e.target.value)}
+                            className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-[11px] font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
+                          />
+                        </motion.div>
+                      )}
 
                       {selectedItems.length === 0 ? (
                         <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4">
@@ -340,14 +417,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                                   <h5 className="text-[11px] font-black text-slate-900 leading-tight truncate">{item.name}</h5>
                                 </div>
                                 {item.unitsPerBox && (
-                                  <div className="flex p-0.5 bg-slate-100 rounded-md flex-shrink-0">
+                                  <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
                                     <button
                                       onClick={() => {
                                         if (item.isOuterBox) {
                                           handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
                                         }
                                       }}
-                                      className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all ${
+                                      className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
                                         !item.isOuterBox 
                                           ? 'bg-white text-blue-600 shadow-sm' 
                                           : 'text-slate-400 hover:text-slate-600'
@@ -361,7 +438,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                                           handleUpdateItem(item.id, { isOuterBox: true, quantity: item.unitsPerBox || 12 });
                                         }
                                       }}
-                                      className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all ${
+                                      className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
                                         item.isOuterBox 
                                           ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
                                           : 'text-slate-400 hover:text-slate-600'
@@ -480,7 +557,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
                               <span className="text-[11px] font-bold text-slate-700 leading-snug truncate">{p.name}</span>
                             </div>
                             <button
-                              onClick={() => handleAddProduct(p)}
+                              onClick={() => {
+                                handleAddProduct(p);
+                                setActiveTab('order');
+                              }}
                               className="bg-blue-600 text-white p-1.5 rounded-lg shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
                             >
                               <Plus className="w-3 h-3" />
@@ -561,14 +641,21 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack }) => {
               filteredCustomers.map((c, i) => (
                 <button
                   key={i}
-                  onClick={() => setSelectedCustomer(c.customer)}
+                  onClick={() => setSelectedCustomer(c.name)}
                   className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 hover:bg-slate-50/50 transition-all duration-200 group active:scale-[0.98]"
                 >
                   <div className="text-left overflow-hidden">
-                    <p className="text-slate-900 font-bold text-[11px] leading-tight truncate">{c.customer}</p>
-                    {selectedRole === 'Admin' && (
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales}</p>
-                    )}
+                    <p className="text-slate-900 font-bold text-[11px] leading-tight truncate">{c.name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-1 rounded ${
+                        c.grade === 'A' ? 'bg-yellow-100 text-yellow-700' :
+                        c.grade === 'B' ? 'bg-slate-100 text-slate-600' :
+                        'bg-orange-100 text-orange-700'
+                      }`}>Grade {c.grade}</span>
+                      {selectedRole === 'Admin' && (
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales}</p>
+                      )}
+                    </div>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
                 </button>

@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchSalesData, calculateAnalytics } from './services/dataService';
-import { SaleRecord, SalesAnalytics } from './types';
+import { SaleRecord, SalesAnalytics, SavedOrder } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
 import InactiveCustomers from './components/InactiveCustomers';
 import CustomerGrades from './components/CustomerGrades';
 import OrderEntry from './components/OrderEntry';
-import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus } from 'lucide-react';
+import OrderList from './components/OrderList';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered } from 'lucide-react';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
@@ -16,10 +17,38 @@ const App: React.FC = () => {
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order' | 'saved_orders'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
+  const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
+  const [savedOrders, setSavedOrders] = useState<SavedOrder[]>(() => {
+    const stored = localStorage.getItem('榮昇_saved_orders');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
+  }, [savedOrders]);
+
+  const handleSaveOrder = (order: SavedOrder) => {
+    setSavedOrders(prev => {
+      const idx = prev.findIndex(o => o.id === order.id);
+      if (idx !== -1) {
+        const next = [...prev];
+        next[idx] = order;
+        return next;
+      }
+      return [order, ...prev];
+    });
+    setEditingOrder(null);
+    setActiveTab('saved_orders');
+  };
+
+  const handleEditOrder = (order: SavedOrder) => {
+    setEditingOrder(order);
+    setActiveTab('order');
+  };
 
   const loadData = useCallback(async (customId?: string) => {
     setLoading(true);
@@ -48,6 +77,17 @@ const App: React.FC = () => {
 
   const NavItems = () => (
     <>
+      <button
+        onClick={() => { 
+          setEditingOrder(null);
+          setActiveTab('order'); 
+          setIsSidebarOpen(false); 
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'order' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
+      >
+        <div className="shrink-0"><Plus className="w-5 h-5" /></div>
+        <span className="truncate">落單 Order</span>
+      </button>
       <button
         onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
@@ -83,6 +123,13 @@ const App: React.FC = () => {
         <div className="shrink-0"><Award className="w-5 h-5" /></div>
         <span className="truncate">客戶等級</span>
       </button>
+      <button
+        onClick={() => { setActiveTab('saved_orders'); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'saved_orders' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}
+      >
+        <div className="shrink-0"><ListOrdered className="w-5 h-5" /></div>
+        <span className="truncate">訂單列表</span>
+      </button>
     </>
   );
 
@@ -100,7 +147,13 @@ const App: React.FC = () => {
   }
 
   if (activeTab === 'order') {
-    return <OrderEntry onBack={() => setActiveTab('dashboard')} />;
+    return (
+      <OrderEntry 
+        onBack={() => { setActiveTab('dashboard'); setEditingOrder(null); }} 
+        onSaveOrder={handleSaveOrder} 
+        editingOrder={editingOrder}
+      />
+    );
   }
 
   return (
@@ -196,7 +249,13 @@ const App: React.FC = () => {
                 </span>
               </div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : activeTab === 'pivot' ? '過往三十天銷售記錄' : activeTab === 'collections' ? '及單+未到期票' : activeTab === 'inactive' ? '7天以上冇落單' : activeTab === 'grades' ? '客戶等級' : 'Transaction Log'}
+                {activeTab === 'dashboard' ? 'Performance Hub' : 
+                 activeTab === 'pivot' ? '過往三十天銷售記錄' : 
+                 activeTab === 'collections' ? '及單+未到期票' : 
+                 activeTab === 'inactive' ? '7天以上冇落單' : 
+                 activeTab === 'grades' ? '客戶等級' : 
+                 activeTab === 'saved_orders' ? '訂單列表' :
+                 'Transaction Log'}
               </h2>
             </div>
             
@@ -236,6 +295,13 @@ const App: React.FC = () => {
             <CustomerGrades />
           ) : activeTab === 'pivot' ? (
             <PivotTable data={records} headers={headers} />
+          ) : activeTab === 'saved_orders' ? (
+            <OrderList 
+              orders={savedOrders.filter(o => o.salesName === localStorage.getItem('ws_selected_role'))} 
+              onEditOrder={handleEditOrder} 
+              currentRole={localStorage.getItem('ws_selected_role')}
+              onNewOrder={() => { setEditingOrder(null); setActiveTab('order'); }}
+            />
           ) : (
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
               <div className="overflow-x-auto">
@@ -306,12 +372,29 @@ const App: React.FC = () => {
           <Award className="w-6 h-6" />
           <span className="text-[9px] font-black uppercase tracking-widest">等級</span>
         </button>
+        <button 
+          onClick={() => setActiveTab('saved_orders')}
+          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'saved_orders' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
+        >
+          <ListOrdered className="w-6 h-6" />
+          <span className="text-[9px] font-black uppercase tracking-widest">訂單</span>
+        </button>
+        <button 
+          onClick={() => { setEditingOrder(null); setActiveTab('order'); }}
+          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${(activeTab as string) === 'order' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
+        >
+          <Plus className="w-6 h-6" />
+          <span className="text-[9px] font-black uppercase tracking-widest">落單</span>
+        </button>
       </nav>
       <div className="h-20 md:hidden" />
 
       {/* Floating Action Button for order entry */}
       <button
-        onClick={() => setActiveTab('order')}
+        onClick={() => {
+          setEditingOrder(null);
+          setActiveTab('order');
+        }}
         className="fixed bottom-24 right-6 md:bottom-10 md:right-10 z-40 bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 group flex items-center gap-2 overflow-hidden max-w-[56px] hover:max-w-[150px]"
       >
         <Plus className="w-6 h-6 shrink-0" />

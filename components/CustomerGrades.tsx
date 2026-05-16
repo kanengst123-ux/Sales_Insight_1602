@@ -2,15 +2,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchCustomerGrades } from '../services/dataService';
 import { Users, Save, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
-
-interface GradeItem {
-  customer: string;
-  sales: string;
-  category: string;
-}
+import { Customer } from '../types';
 
 const CustomerGrades: React.FC = () => {
-  const [data, setData] = useState<GradeItem[]>([]);
+  const [data, setData] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSales, setSelectedSales] = useState<string>('EVA');
   const [tempGrades, setTempGrades] = useState<Record<string, string>>({});
@@ -25,10 +20,9 @@ const CustomerGrades: React.FC = () => {
       
       const initialTemp: Record<string, string> = {};
       grades.forEach(item => {
-        initialTemp[item.customer] = item.category;
+        initialTemp[item.name] = item.grade;
       });
       
-      // Batch these updates to avoid redundant expensive re-sorts during initialization
       setData(grades);
       setTempGrades(initialTemp);
       setLoading(false);
@@ -43,22 +37,16 @@ const CustomerGrades: React.FC = () => {
     const filtered = data.filter(item => item.sales.toUpperCase() === salesFilter);
     
     // 2. Sort the data
-    // Optimization: We sort based on the category in the master data (initial state)
-    // rather than the temporary state to prevent the list from jumping while the user is clicking.
     return filtered.sort((a, b) => {
-      const categoryA = a.category?.trim() || '';
-      const categoryB = b.category?.trim() || '';
-      
-      // Prioritize unranked (empty string)
-      if (categoryA === '' && categoryB !== '') return -1;
-      if (categoryA !== '' && categoryB === '') return 1;
+      const gradeA = a.grade?.trim() || '';
+      const gradeB = b.grade?.trim() || '';
       
       // Secondary sort by name
-      if (a.customer < b.customer) return -1;
-      if (a.customer > b.customer) return 1;
+      if (a.name < b.name) return -1;
+      if (a.name > b.name) return 1;
       return 0;
     });
-  }, [data, selectedSales]); // Removed tempGrades from dependencies
+  }, [data, selectedSales]);
 
   const handleGradeChange = (customer: string, grade: string) => {
     setTempGrades(prev => ({
@@ -168,19 +156,19 @@ const CustomerGrades: React.FC = () => {
                 filteredItems.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-4 md:px-8 py-4 md:py-6">
-                      <span className="text-slate-900 font-bold text-sm md:text-base leading-tight block line-clamp-2 md:line-clamp-none">{item.customer}</span>
+                      <span className="text-slate-900 font-bold text-sm md:text-base leading-tight block line-clamp-2 md:line-clamp-none">{item.name}</span>
                     </td>
                     {['A', 'B', 'C'].map(grade => (
                       <td key={grade} className="px-1 md:px-8 py-4 md:py-6 text-center">
                         <button
-                          onClick={() => handleGradeChange(item.customer, grade)}
+                          onClick={() => handleGradeChange(item.name, grade)}
                           className={`w-8 h-8 md:w-10 md:h-10 rounded-full border-2 transition-all flex items-center justify-center mx-auto ${
-                            tempGrades[item.customer] === grade
+                            tempGrades[item.name] === grade
                             ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105 md:scale-110'
                             : 'bg-white border-slate-200 text-slate-300 hover:border-slate-300'
                           }`}
                         >
-                          {tempGrades[item.customer] === grade ? <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" /> : <span className="font-bold text-[10px] md:text-xs uppercase">{grade}</span>}
+                          {tempGrades[item.name] === grade ? <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" /> : <span className="font-bold text-[10px] md:text-xs uppercase">{grade}</span>}
                         </button>
                       </td>
                     ))}

@@ -1,5 +1,5 @@
 
-import { SaleRecord, SalesAnalytics, SalesData, Product } from '../types';
+import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
 
@@ -81,7 +81,7 @@ const parseNum = (val: any): number => {
   return isNaN(parsed) ? 0 : parsed;
 };
 
-export const fetchCustomerGrades = async (): Promise<any[]> => {
+export const fetchCustomerGrades = async (): Promise<Customer[]> => {
   const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
   const cacheBuster = `&t=${Date.now()}`;
   try {
@@ -92,10 +92,10 @@ export const fetchCustomerGrades = async (): Promise<any[]> => {
     if (rows.length < 2) return [];
 
     return rows.slice(1).map(row => ({
-      customer: row[0] || '',
+      name: row[0] || '',
       sales: row[1] || '',
-      category: row[2] || '',
-      district: row[3] || '' // Col D
+      grade: (row[2] || 'C') as 'A' | 'B' | 'C',
+      district: row[3] || ''
     }));
   } catch (error) {
     console.error('Error fetching customer grades:', error);
@@ -267,77 +267,81 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 };
 
 export const fetchProducts = async (customId?: string): Promise<Product[]> => {
-  const targetId = customId || DEFAULT_SHEET_ID;
-  const DATA_URL = getExportUrl(targetId);
-
+  const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
+  
   try {
-    const response = await fetch(DATA_URL);
-    if (!response.ok) throw new Error('Cloud fetch failed');
+    const response = await fetch(MASTER_URL + `&t=${Date.now()}`);
+    if (!response.ok) throw new Error('Master sheet fetch failed');
     const text = await response.text();
     const rows = parseCSV(text);
     if (rows.length < 1) return [];
     
-    // Find the header row (the one that contains "Title" or has the most content)
+    // Find the header row (usually 0, but scan just in case)
     let headerRowIdx = 0;
-    let titleIdx = -1;
+    let titleIdx = 2; // Col C is Title
+    let goldIdx = 17; // Col R
+    let silverIdx = 18; // Col S
+    let basicIdx = 19; // Col T
+    let priceIdx = 14; // Col O
+    let discountedPriceIdx = 15; // Col P
     
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
-      const idx = findColumn(rows[i], ['Title', 'Title(Col C)', 'productName', 'item', 'Name']);
+      const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
       if (idx !== -1) {
         headerRowIdx = i;
         titleIdx = idx;
+        // Verify other indices based on actual headers if possible
+        const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
+        if (rIdx !== -1) goldIdx = rIdx;
+        const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
+        if (sIdx !== -1) silverIdx = sIdx;
+        const tIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('basic'));
+        if (tIdx !== -1) basicIdx = tIdx;
+        const pIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'price');
+        if (pIdx !== -1) priceIdx = pIdx;
+        const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
+        if (dpIdx !== -1) discountedPriceIdx = dpIdx;
         break;
       }
     }
-    
-    // Fallback if no header found
-    if (titleIdx === -1) {
-      headerRowIdx = 0;
-      titleIdx = 2; // User said Col C
-    }
 
-    const products = new Set<string>();
+    const productMap = new Map<string, Product>();
     rows.slice(headerRowIdx + 1).forEach(row => {
       const productName = row[titleIdx];
       if (productName && productName.trim()) {
         const trimmed = productName.trim();
-        // Skip header repeat or empty data
+        // Skip header if it repeated or invalid titles
         if (trimmed.toLowerCase() === 'title') return;
         
-        // Basic check to skip things that look like pure short numbers if they were accidentally picked up
-        // but allowing longer numbers if they might be product names
-        if (trimmed.length > 2 || !/^\d+$/.test(trimmed)) {
-          products.add(trimmed);
+        const getPrice = (idx: number) => {
+          const val = row[idx];
+          if (val && val.trim() !== '') return parseNum(val);
+          
+          const discounted = row[discountedPriceIdx];
+          if (discounted && discounted.trim() !== '') return parseNum(discounted);
+          
+          return parseNum(row[priceIdx]);
+        };
+
+        // Filter out very short or numeric-only strings if they aren't products
+        if (trimmed.length > 1) {
+          if (!productMap.has(trimmed)) {
+            productMap.set(trimmed, {
+              name: trimmed,
+              prices: {
+                A: getPrice(goldIdx),
+                B: getPrice(silverIdx),
+                C: getPrice(basicIdx)
+              }
+            });
+          }
         }
       }
     });
     
-    return Array.from(products).sort().map(name => ({ name }));
+    return Array.from(productMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   } catch (error) {
     console.error('Error fetching products:', error);
-    // Fallback to local data
-    try {
-      const localResponse = await fetch('./data.csv');
-      if (!localResponse.ok) return [];
-      const text = await localResponse.text();
-      const rows = parseCSV(text);
-      if (rows.length < 2) return [];
-      
-      const headers = rows[0];
-      const titleIdx = findColumn(headers, ['productName', 'Title', 'item', 'Name']) !== -1 
-        ? findColumn(headers, ['productName', 'Title', 'item', 'Name'])
-        : 7;
-      
-      const products = new Set<string>();
-      rows.slice(1).forEach(row => {
-        const productName = row[titleIdx];
-        if (productName && productName.trim()) {
-          products.add(productName.trim());
-        }
-      });
-      return Array.from(products).sort().map(name => ({ name }));
-    } catch (e) {
-      return [];
-    }
+    return [];
   }
 };

@@ -60,6 +60,18 @@ export interface PivotConfig {
 export interface Product {
   name: string;
   price?: number;
+  prices: {
+    A: number;
+    B: number;
+    C: number;
+  };
+}
+
+export interface Customer {
+  name: string;
+  grade: 'A' | 'B' | 'C';
+  district?: string;
+  sales: string;
 }
 
 export interface OrderItem {
@@ -70,4 +82,14 @@ export interface OrderItem {
   isOuterBox: boolean; // Toggle state
   unitsPerBox: number | null; // Extracted from name e.g. "6/箱" -> 6
   outerBoxUnit: string | null; // Extracted from name e.g. "6/箱" -> "箱", "10/條" -> "條"
+}
+
+export interface SavedOrder {
+  id: string;
+  date: string;
+  customerName: string;
+  orderAmount: number;
+  salesName: string;
+  remark: string;
+  items: OrderItem[];
 }
