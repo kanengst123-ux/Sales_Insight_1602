@@ -249,7 +249,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 p-2 sm:p-4 md:p-8 lg:p-10 overflow-x-auto">
+      <main className="flex-1 p-2 sm:p-4 md:p-8 lg:p-10 overflow-x-hidden">
         <div className="max-w-7xl mx-auto">
           {activeTab !== 'saved_orders' && (
             <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">

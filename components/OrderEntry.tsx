@@ -221,10 +221,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   if (selectedCustomer) {
     return (
-      <div className="min-h-screen bg-white animate-in fade-in slide-in-from-right-4 duration-500 flex flex-col">
+      <div className="min-h-screen w-full bg-white animate-in fade-in slide-in-from-right-4 duration-500 flex flex-col overflow-x-hidden">
         {/* Top Layer: Product Search Box */}
-        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-4 py-2 border-b border-slate-50">
-          <div className="max-w-md mx-auto relative flex items-center gap-2">
+        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50">
+          <div className="w-full max-w-md mx-auto relative flex items-center gap-2">
             <button 
               onClick={() => setSelectedCustomer(null)}
               className="p-1.5 -ml-1 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
@@ -305,7 +305,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
         {/* Scrollable Content: Selected Products or Favorites */}
         <div className="flex-1 overflow-hidden bg-slate-50/30 flex flex-col relative">
           {/* Tab Switcher Labels (Optional visual aid) */}
-          <div className="flex px-4 pt-2 gap-4">
+          <div className="flex px-2 sm:px-4 pt-2 gap-4">
             <button 
               onClick={() => setActiveTab('order')}
               className={`text-[9px] font-black uppercase tracking-[0.2em] pb-1 transition-colors relative ${
@@ -334,7 +334,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-4 py-3 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
                   onDragEnd={(_, info) => {
@@ -527,7 +527,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-4 py-3 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
                   onDragEnd={(_, info) => {
@@ -589,8 +589,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   if (selectedRole) {
     return (
-      <div className="min-h-screen bg-white p-3 sm:p-6 animate-in fade-in slide-in-from-right-4 duration-500">
-        <div className="max-w-md mx-auto pt-4">
+      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in slide-in-from-right-4 duration-500 overflow-x-hidden">
+        <div className="w-full max-w-md mx-auto pt-4">
           <div className="flex items-center justify-between mb-4">
             <button 
               onClick={() => setSelectedRole(null)}
@@ -686,12 +686,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       {/* Background Orbs */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
       
-      <div className="relative z-10 w-full max-w-sm">
+      <div className="relative z-10 w-full max-w-sm px-2 sm:px-0">
         <button 
           onClick={onBack}
           className="mb-6 flex items-center gap-2 text-slate-500 hover:text-blue-400 transition-colors group mx-auto"
