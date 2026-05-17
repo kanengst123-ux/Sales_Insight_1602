@@ -67,7 +67,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
           </div>
           <div className="relative z-10">
             <p className="text-blue-400 font-bold text-xs uppercase tracking-widest mb-2">Total Outstanding Dues</p>
-            <h3 className="text-5xl md:text-6xl font-black tabular-nums">${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+            <h3 className="text-4xl md:text-6xl font-black tabular-nums">${totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             <div className="mt-6 flex items-center gap-2">
               <span className="px-4 py-1.5 bg-blue-500/20 text-blue-300 text-xs font-bold rounded-xl border border-blue-500/20">Awaiting Portfolio Settlement</span>
               <span className="px-4 py-1.5 bg-slate-800/50 text-slate-400 text-xs font-bold rounded-xl border border-slate-700">
@@ -79,7 +79,7 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden w-full">
-        <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
+        <div className="p-4 sm:p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight">Accounts Receivable Breakdown</h3>
             <p className="text-slate-500 text-xs font-medium mt-1">Logic: [Col M &gt; Now] OR [Col M='N' & Col S='F']</p>
@@ -95,32 +95,32 @@ const CollectionsTable: React.FC<CollectionsTableProps> = ({ data }) => {
             <table className="w-full text-left table-auto">
               <thead>
                 <tr className="bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance Due</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance Due</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {collectionsData.map((item, index) => (
                   <tr key={item.customer} className="hover:bg-blue-50/30 transition-all group">
-                    <td className="px-8 py-6">
+                    <td className="px-4 sm:px-8 py-6">
                       <div className="flex flex-col">
-                        <span className="text-slate-900 font-black text-base group-hover:text-blue-600 transition-colors">{item.customer}</span>
+                        <span className="text-slate-900 font-black text-sm sm:text-base group-hover:text-blue-600 transition-colors">{item.customer}</span>
                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Verified Account</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <span className="text-xl font-black text-slate-900 tabular-nums">
+                    <td className="px-4 sm:px-8 py-6 text-right">
+                      <span className="text-lg sm:text-xl font-black text-slate-900 tabular-nums">
                         ${item.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </td>
-                    <td className="px-8 py-6 w-px whitespace-nowrap">
+                    <td className="px-4 sm:px-8 py-6 w-px whitespace-nowrap">
                        <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 inline-block">
                         {item.user}
                        </span>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-4 sm:px-8 py-6">
                       <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
                     </td>
                   </tr>

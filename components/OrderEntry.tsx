@@ -589,7 +589,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   if (selectedRole) {
     return (
-      <div className="min-h-screen bg-white p-6 animate-in fade-in slide-in-from-right-4 duration-500">
+      <div className="min-h-screen bg-white p-3 sm:p-6 animate-in fade-in slide-in-from-right-4 duration-500">
         <div className="max-w-md mx-auto pt-4">
           <div className="flex items-center justify-between mb-4">
             <button 
@@ -633,7 +633,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
               <button
                 key={d}
                 onClick={() => setSelectedDistrict(selectedDistrict === d ? null : d)}
-                className={`py-2 px-2 rounded-xl text-[9px] font-black transition-all whitespace-nowrap flex-1 border ${
+                className={`py-2 px-2 rounded-xl text-[9px] font-black transition-all whitespace-nowrap min-w-[70px] border ${
                   selectedDistrict === d 
                     ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 scale-[0.98]' 
                     : 'bg-slate-50 text-slate-500 border-slate-100 hover:bg-slate-100'
@@ -644,7 +644,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             ))}
           </div>
           
-          <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
             {loading ? (
               <div className="col-span-2 flex flex-col items-center justify-center p-20 text-slate-300">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />

@@ -249,7 +249,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 p-4 md:p-8 lg:p-10 overflow-x-hidden">
+      <main className="flex-1 p-2 sm:p-4 md:p-8 lg:p-10 overflow-x-auto">
         <div className="max-w-7xl mx-auto">
           {activeTab !== 'saved_orders' && (
             <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -350,7 +350,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around p-3 z-30 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around p-2 z-30 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
         <button 
           onClick={() => setActiveTab('dashboard')}
           className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}

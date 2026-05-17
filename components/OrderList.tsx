@@ -36,7 +36,7 @@ const OrderList: React.FC<OrderListProps> = ({
   }, []);
   if (orders.length === 0) {
     return (
-      <div className="bg-white rounded-[2.5rem] p-16 flex flex-col items-center text-center gap-6 shadow-sm border border-slate-200 relative overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] p-6 sm:p-16 flex flex-col items-center text-center gap-6 shadow-sm border border-slate-200 relative overflow-hidden">
         <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center">
           {currentRole ? <UserCircle className="w-12 h-12 text-slate-300" /> : <Calendar className="w-12 h-12 text-slate-300" />}
         </div>
@@ -71,7 +71,7 @@ const OrderList: React.FC<OrderListProps> = ({
   return (
     <div className="relative">
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <div className="px-8 py-4 bg-slate-50/30 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-4 sm:px-8 py-4 bg-slate-50/30 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">目前顯示 {currentRole} 的訂單</span>

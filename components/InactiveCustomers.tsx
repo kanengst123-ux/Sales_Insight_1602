@@ -214,7 +214,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
           </div>
           <div className="relative z-10">
             <p className="text-amber-400 font-bold text-xs uppercase tracking-widest mb-2">Inactive Accounts</p>
-            <h3 className="text-5xl md:text-6xl font-black tabular-nums">{inactiveData.length}</h3>
+            <h3 className="text-4xl md:text-6xl font-black tabular-nums">{inactiveData.length}</h3>
             <div className="mt-6 flex items-center gap-2">
               <span className="px-4 py-1.5 bg-amber-500/20 text-amber-300 text-xs font-bold rounded-xl border border-amber-500/20">No activity in 7+ days</span>
               <span className="px-4 py-1.5 bg-slate-800/50 text-slate-400 text-xs font-bold rounded-xl border border-slate-700">
@@ -226,7 +226,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden w-full">
-        <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="p-4 sm:p-8 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight">搜查鋪名</h3>
             <p className="text-slate-500 text-xs font-medium mt-1">Customers whose last entry (Col A) was more than 7 days ago</p>
@@ -295,35 +295,35 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
             <table className="w-full text-left table-auto">
               <thead>
                 <tr className="bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Days Inactive</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Days Inactive</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-px whitespace-nowrap">User</th>
+                  <th className="px-4 sm:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredInactiveData.map((item) => (
                   <tr key={item.customer} className="hover:bg-amber-50/30 transition-all group">
-                    <td className="px-8 py-6">
+                    <td className="px-4 sm:px-8 py-6">
                       <div 
                         className="flex flex-col cursor-pointer"
                         onClick={() => handleCustomerClick(item.customer)}
                       >
-                        <span className="text-slate-900 font-black text-base group-hover:text-amber-600 transition-colors decoration-amber-500/30 hover:underline underline-offset-4">{item.customer}</span>
+                        <span className="text-slate-900 font-black text-sm sm:text-base group-hover:text-amber-600 transition-colors decoration-amber-500/30 hover:underline underline-offset-4">{item.customer}</span>
                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Ref: {item.lastOrderId}</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <span className="text-xl font-black text-slate-900 tabular-nums">
+                    <td className="px-4 sm:px-8 py-6 text-right">
+                      <span className="text-lg sm:text-xl font-black text-slate-900 tabular-nums">
                         {item.daysInactive}d
                       </span>
                     </td>
-                    <td className="px-8 py-6 w-px whitespace-nowrap">
+                    <td className="px-4 sm:px-8 py-6 w-px whitespace-nowrap">
                        <span className="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 inline-block">
                         {item.user}
                        </span>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-4 sm:px-8 py-6">
                       <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-amber-500 transition-colors" />
                     </td>
                   </tr>
