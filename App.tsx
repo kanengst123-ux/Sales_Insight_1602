@@ -393,13 +393,6 @@ const App: React.FC = () => {
           <ListOrdered className="w-6 h-6" />
           <span className="text-[9px] font-black uppercase tracking-widest">訂單</span>
         </button>
-        <button 
-          onClick={() => { setEditingOrder(null); setActiveTab('order'); }}
-          className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${(activeTab as string) === 'order' ? 'text-blue-600 bg-blue-50/50' : 'text-slate-400'}`}
-        >
-          <Plus className="w-6 h-6" />
-          <span className="text-[9px] font-black uppercase tracking-widest">落單</span>
-        </button>
       </nav>
       <div className="h-20 md:hidden" />
 
