@@ -240,7 +240,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 placeholder="搜尋產品 (Col C)..."
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
               />
             </div>
             {onShowOrderList && (
@@ -390,7 +390,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                             placeholder="Input text remarks (Sales name, specific delivery instructions etc.)..."
                             value={remark}
                             onChange={(e) => setRemark(e.target.value)}
-                            className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-[11px] font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
+                            className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
                           />
                         </motion.div>
                       )}
@@ -474,7 +474,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                     type="number"
                                     value={item.quantity}
                                     onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
-                                    className="w-full text-center bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                    className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
                                   />
                                   <button 
                                     onClick={() => {
@@ -494,7 +494,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                     type="number"
                                     value={item.price}
                                     onChange={(e) => handleUpdateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
-                                    className="w-full bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                    className="w-full bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
                                   />
                                 </div>
 
@@ -613,7 +613,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 placeholder="搜尋客戶名稱..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
               />
             </div>
             {onShowOrderList && (
