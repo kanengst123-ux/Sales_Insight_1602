@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { fetchCustomerGrades } from '../services/dataService';
+import { fetchCustomerGrades, GOOGLE_SCRIPT_URL } from '../services/dataService';
 import { Users, Save, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { Customer } from '../types';
 
@@ -58,12 +58,9 @@ const CustomerGrades: React.FC = () => {
   const handleSave = async () => {
     setSaveStatus('saving');
     
-    // Hardcoded URL for production/GitHub Pages compatibility
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
-
     try {
       // Create a payload with current selections
-      await fetch(scriptUrl, {
+      await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors', 
         headers: {

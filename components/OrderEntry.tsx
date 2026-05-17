@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered } from 'lucide-react';
+import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchCustomerGrades, fetchProducts } from '../services/dataService';
+import { fetchCustomerGrades, fetchProducts, GOOGLE_SCRIPT_URL } from '../services/dataService';
 import { Product, OrderItem, Customer, SavedOrder } from '../types';
 
 interface OrderEntryProps {
@@ -25,6 +25,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   const [remark, setRemark] = useState(editingOrder?.remark || '');
   const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
   const [favorites, setFavorites] = useState<Product[]>([]);
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [addStatus, setAddStatus] = useState<'idle' | 'saving' | 'success'>('idle');
 
   // Load favorites when role changes or on mount
   useEffect(() => {
@@ -164,6 +169,78 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     return favorites.some(p => p.name === productName);
   };
 
+  const handleAddCustomerSubmit = async () => {
+    if (!newCustomerName.trim()) return;
+    setAddStatus('saving');
+    
+    // Normalize user name: EVA -> Eva, KATIE -> Katie, etc.
+    const userName = selectedRole ? selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1).toLowerCase() : 'Unknown';
+
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add_customer',
+          name: newCustomerName.trim(),
+          user: userName
+        })
+      });
+      
+      setAddStatus('success');
+      setTimeout(() => {
+        setAddStatus('idle');
+        setIsAddingCustomer(false);
+        setNewCustomerName('');
+        // Refresh customer data
+        const refreshData = async () => {
+          const customerData = await fetchCustomerGrades();
+          setCustomers(customerData);
+        };
+        refreshData();
+      }, 1500);
+    } catch (error) {
+      console.error('Failed to add customer:', error);
+      setAddStatus('idle');
+      alert('Failed to connect to Google Script.');
+    }
+  };
+
+  const handleAddProductSubmit = async () => {
+    if (!newProductName.trim()) return;
+    setAddStatus('saving');
+
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add_product',
+          name: newProductName.trim()
+        })
+      });
+      
+      setAddStatus('success');
+      setTimeout(() => {
+        setAddStatus('idle');
+        setIsAddingProduct(false);
+        setNewProductName('');
+        // Refresh product data
+        const refreshData = async () => {
+          const productData = await fetchProducts();
+          setProducts(productData);
+        };
+        refreshData();
+      }, 1500);
+    } catch (error) {
+      console.error('Failed to add product:', error);
+      setAddStatus('idle');
+      alert('Failed to connect to Google Script.');
+    }
+  };
+
   const handleFinalSave = () => {
     if (!selectedCustomer || selectedItems.length === 0) return;
     
@@ -185,6 +262,106 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     setRemark('');
     setSelectedCustomer(null);
   };
+
+  const renderAddModal = () => (
+    <AnimatePresence>
+      {(isAddingCustomer || isAddingProduct) && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (addStatus !== 'saving') {
+                setIsAddingCustomer(false);
+                setIsAddingProduct(false);
+              }
+            }}
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+          />
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="relative bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl border border-slate-200 p-8"
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAddingCustomer ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                {isAddingCustomer ? <UserPlus className="w-6 h-6" /> : <PackagePlus className="w-6 h-6" />}
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                  {isAddingCustomer ? '新增客戶' : '新增產品'}
+                </h3>
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">
+                  {isAddingCustomer ? 'ADD NEW CUSTOMER' : 'ADD NEW PRODUCT'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">名稱 / {isAddingCustomer ? 'CUSTOMER NAME' : 'PRODUCT NAME'}</label>
+                <input 
+                  type="text"
+                  autoFocus
+                  value={isAddingCustomer ? newCustomerName : newProductName}
+                  onChange={(e) => isAddingCustomer ? setNewCustomerName(e.target.value) : setNewProductName(e.target.value)}
+                  placeholder={isAddingCustomer ? "鍵入客戶名稱..." : "鍵入產品名稱..."}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      isAddingCustomer ? handleAddCustomerSubmit() : handleAddProductSubmit();
+                    }
+                  }}
+                />
+              </div>
+              {isAddingCustomer && (
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Assign to Sales</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                      <User className="w-3 h-3" />
+                    </div>
+                    <span className="text-xs font-black text-slate-700">{selectedRole}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-8">
+              <button 
+                onClick={() => {
+                  setIsAddingCustomer(false);
+                  setIsAddingProduct(false);
+                }}
+                disabled={addStatus === 'saving'}
+                className="px-6 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
+              >
+                取消 Cancel
+              </button>
+              <button 
+                onClick={isAddingCustomer ? handleAddCustomerSubmit : handleAddProductSubmit}
+                disabled={addStatus === 'saving' || (isAddingCustomer ? !newCustomerName.trim() : !newProductName.trim())}
+                className={`px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
+                  addStatus === 'success' 
+                    ? 'bg-emerald-500 text-white shadow-emerald-500/20' 
+                    : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700 active:scale-95 disabled:opacity-50'
+                }`}
+              >
+                {addStatus === 'saving' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : addStatus === 'success' ? (
+                  <Check className="w-4 h-4" />
+                ) : null}
+                {addStatus === 'success' ? '已完成' : '確認 Confirm'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
 
   const filteredProducts = useMemo(() => {
     if (!productSearchQuery.trim()) return [];
@@ -243,6 +420,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
               />
             </div>
+            <button 
+              onClick={() => setIsAddingProduct(true)}
+              className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm flex-shrink-0"
+              title="Add New Product"
+            >
+              <PackagePlus className="w-4 h-4" />
+            </button>
             {onShowOrderList && (
               <button 
                 onClick={onShowOrderList}
@@ -582,7 +766,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             </AnimatePresence>
           </div>
         </div>
-
+        {renderAddModal()}
       </div>
     );
   }
@@ -616,6 +800,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
               />
             </div>
+            <button 
+              onClick={() => setIsAddingCustomer(true)}
+              className="p-4 bg-blue-50 border border-blue-100 rounded-2xl text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm flex-shrink-0"
+              title="Add New Customer"
+            >
+              <UserPlus className="w-5 h-5" />
+            </button>
             {onShowOrderList && (
               <button 
                 onClick={onShowOrderList}
@@ -681,6 +872,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             )}
           </div>
         </div>
+        {renderAddModal()}
       </div>
     );
   }
@@ -738,6 +930,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
           WS SALES SYSTEM v1.0
         </p>
       </div>
+      {renderAddModal()}
     </div>
   );
 };

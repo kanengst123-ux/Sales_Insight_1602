@@ -2,6 +2,7 @@
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
+export const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
