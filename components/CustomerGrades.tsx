@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { fetchCustomerGrades, GOOGLE_SCRIPT_URL } from '../services/dataService';
+import { fetchCustomerGrades, UPDATE_SCRIPT_URL } from '../services/dataService';
 import { Users, Save, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { Customer } from '../types';
 
@@ -60,7 +60,7 @@ const CustomerGrades: React.FC = () => {
     
     try {
       // Create a payload with current selections
-      await fetch(GOOGLE_SCRIPT_URL, {
+      await fetch(UPDATE_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors', 
         headers: {

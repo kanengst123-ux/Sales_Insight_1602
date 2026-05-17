@@ -2,7 +2,7 @@
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
-export const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
+export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
@@ -344,5 +344,44 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
   } catch (error) {
     console.error('Error fetching products:', error);
     return [];
+  }
+};
+
+export const addCustomerToSheet = async (name: string, user: string): Promise<boolean> => {
+  try {
+    const payload = {
+      action: 'addCustomer',
+      name,
+      user
+    };
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (error) {
+    console.error('Error adding customer:', error);
+    return false;
+  }
+};
+
+export const addProductToSheet = async (name: string): Promise<boolean> => {
+  try {
+    const payload = {
+      action: 'addProduct',
+      name
+    };
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (error) {
+    console.error('Error adding product:', error);
+    return false;
   }
 };
