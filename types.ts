@@ -92,4 +92,5 @@ export interface SavedOrder {
   salesName: string;
   remark: string;
   items: OrderItem[];
+  isHeld?: boolean;
 }

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star } from 'lucide-react';
+import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts } from '../services/dataService';
 import { Product, OrderItem, Customer, SavedOrder } from '../types';
@@ -8,10 +8,11 @@ import { Product, OrderItem, Customer, SavedOrder } from '../types';
 interface OrderEntryProps {
   onBack: () => void;
   onSaveOrder?: (order: SavedOrder) => void;
+  onShowOrderList?: () => void;
   editingOrder?: SavedOrder | null;
 }
 
-const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrder }) => {
+const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
     return localStorage.getItem('ws_selected_role');
@@ -239,9 +240,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrd
                 placeholder="搜尋產品 (Col C)..."
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
               />
             </div>
+            {onShowOrderList && (
+              <button 
+                onClick={onShowOrderList}
+                className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+                title="Order List"
+              >
+                <ListOrdered className="w-4 h-4" />
+              </button>
+            )}
           </div>
           
           {/* Search Results Dropdown */}
@@ -335,7 +345,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrd
                     {/* Selected Products List */}
                     <div className="space-y-4">
                     <div className="flex items-center justify-between px-1">
-                        <div className="flex flex-col flex-1 pr-4 min-w-0">
+                        <div className="flex flex-col flex-1 pr-2 min-w-0">
                           <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 truncate">
                             <span className="truncate">{selectedCustomer}</span> 
                             <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex-shrink-0">Grade {selectedCustomerInfo?.grade}</span>
@@ -355,19 +365,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrd
                           </div>
                         </div>
                         {selectedItems.length > 0 && (
-                          <div className="flex items-center gap-3 flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
                             <button 
                               onClick={() => setSelectedItems([])}
-                              className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-600 transition-colors"
+                              className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-600 transition-colors px-1"
                             >
                               CLEAR ALL
                             </button>
                             <button 
                               onClick={handleFinalSave}
-                              className="bg-green-500 hover:bg-green-600 text-white p-1.5 rounded-lg shadow-lg shadow-green-500/20 active:scale-95 transition-all group"
+                              className="bg-green-500 hover:bg-green-600 text-white p-2.5 rounded-xl shadow-lg shadow-green-500/20 active:scale-95 transition-all group shrink-0"
                               title="Place Order"
                             >
-                              <Check className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                              <Check className="w-4 h-4 group-hover:scale-110 transition-transform" />
                             </button>
                           </div>
                         )}
@@ -598,15 +608,26 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, editingOrd
           </div>
 
           {/* Search Bar */}
-          <div className="relative mb-4">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="搜尋客戶名稱..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
-            />
+          <div className="relative mb-4 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="搜尋客戶名稱..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
+              />
+            </div>
+            {onShowOrderList && (
+              <button 
+                onClick={onShowOrderList}
+                className="p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+                title="Order List"
+              >
+                <ListOrdered className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {/* District Quick Filter - Row */}

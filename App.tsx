@@ -50,6 +50,16 @@ const App: React.FC = () => {
     setActiveTab('order');
   };
 
+  const handleDeleteOrder = (orderId: string) => {
+    setSavedOrders(prev => prev.filter(o => o.id !== orderId));
+  };
+
+  const handleToggleHold = (orderId: string) => {
+    setSavedOrders(prev => prev.map(o => 
+      o.id === orderId ? { ...o, isHeld: !o.isHeld } : o
+    ));
+  };
+
   const loadData = useCallback(async (customId?: string) => {
     setLoading(true);
     setError(null);
@@ -151,6 +161,7 @@ const App: React.FC = () => {
       <OrderEntry 
         onBack={() => { setActiveTab('dashboard'); setEditingOrder(null); }} 
         onSaveOrder={handleSaveOrder} 
+        onShowOrderList={() => { setActiveTab('saved_orders'); setEditingOrder(null); }}
         editingOrder={editingOrder}
       />
     );
@@ -240,27 +251,28 @@ const App: React.FC = () => {
 
       <main className="flex-1 p-4 md:p-8 lg:p-10 overflow-x-hidden">
         <div className="max-w-7xl mx-auto">
-          <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`w-2 h-2 rounded-full ${dataSource === 'cloud' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${dataSource === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                  {dataSource === 'cloud' ? 'Live Cloud Sync' : 'Offline Mode (Local)'}
-                </span>
+          {activeTab !== 'saved_orders' && (
+            <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-2 h-2 rounded-full ${dataSource === 'cloud' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${dataSource === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {dataSource === 'cloud' ? 'Live Cloud Sync' : 'Offline Mode (Local)'}
+                  </span>
+                </div>
+                <h2 className="text-4xl font-black text-slate-900 tracking-tight">
+                  {activeTab === 'dashboard' ? 'Performance Hub' : 
+                   activeTab === 'pivot' ? '過往三十天銷售記錄' : 
+                   activeTab === 'collections' ? '及單+未到期票' : 
+                   activeTab === 'inactive' ? '7天以上冇落單' : 
+                   activeTab === 'grades' ? '客戶等級' : 
+                   'Transaction Log'}
+                </h2>
               </div>
-              <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' ? 'Performance Hub' : 
-                 activeTab === 'pivot' ? '過往三十天銷售記錄' : 
-                 activeTab === 'collections' ? '及單+未到期票' : 
-                 activeTab === 'inactive' ? '7天以上冇落單' : 
-                 activeTab === 'grades' ? '客戶等級' : 
-                 activeTab === 'saved_orders' ? '訂單列表' :
-                 'Transaction Log'}
-              </h2>
-            </div>
-            
-            {/* AI Analysis button removed */}
-          </header>
+              
+              {/* AI Analysis button removed */}
+            </header>
+          )}
 
           {error ? (
             <div className="bg-red-50 border border-red-100 text-red-800 p-10 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-8 shadow-sm">
@@ -299,6 +311,8 @@ const App: React.FC = () => {
             <OrderList 
               orders={savedOrders.filter(o => o.salesName === localStorage.getItem('ws_selected_role'))} 
               onEditOrder={handleEditOrder} 
+              onDeleteOrder={handleDeleteOrder}
+              onToggleHold={handleToggleHold}
               currentRole={localStorage.getItem('ws_selected_role')}
               onNewOrder={() => { setEditingOrder(null); setActiveTab('order'); }}
             />
