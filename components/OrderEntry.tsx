@@ -345,7 +345,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                     {/* Selected Products List */}
                     <div className="space-y-4">
                     <div className="flex flex-col px-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center justify-between gap-3 mb-2">
                           <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 min-w-0">
                             <span className="truncate">{selectedCustomer}</span> 
                             <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex-shrink-0">Grade {selectedCustomerInfo?.grade}</span>
@@ -431,7 +431,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                           handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
                                         }
                                       }}
-                                      className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                      className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
                                         !item.isOuterBox 
                                           ? 'bg-white text-blue-600 shadow-sm' 
                                           : 'text-slate-400 hover:text-slate-600'
@@ -445,7 +445,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                           handleUpdateItem(item.id, { isOuterBox: true, quantity: item.unitsPerBox || 12 });
                                         }
                                       }}
-                                      className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                      className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
                                         item.isOuterBox 
                                           ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
                                           : 'text-slate-400 hover:text-slate-600'
@@ -460,13 +460,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                               {/* Row 2: Quantity, Price, Trash */}
                               <div className="flex items-center gap-1.5">
                                 {/* Quantity */}
-                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden min-w-[80px]">
+                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden w-20 flex-shrink-0">
                                   <button 
                                     onClick={() => {
                                       const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
                                       handleUpdateItem(item.id, { quantity: Math.max(0, item.quantity - step) });
                                     }}
-                                    className="px-1.5 py-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                    className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
                                   >
                                     <Minus className="w-2.5 h-2.5" />
                                   </button>
@@ -474,33 +474,33 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                     type="number"
                                     value={item.quantity}
                                     onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
-                                    className="w-full text-center bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums"
+                                    className="w-full text-center bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
                                   />
                                   <button 
                                     onClick={() => {
                                       const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
                                       handleUpdateItem(item.id, { quantity: item.quantity + step });
                                     }}
-                                    className="px-1.5 py-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                    className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
                                   >
                                     <Plus className="w-2.5 h-2.5" />
                                   </button>
                                 </div>
 
                                 {/* Price */}
-                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1.5 py-1 w-14">
+                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
                                   <span className="text-slate-400 text-[8px] font-bold mr-0.5">$</span>
                                   <input
                                     type="number"
                                     value={item.price}
                                     onChange={(e) => handleUpdateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
-                                    className="w-full bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums"
+                                    className="w-full bg-transparent text-[10px] font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
                                   />
                                 </div>
 
                                 {/* Subtotal */}
-                                <div className="flex-1 text-right min-w-0 pr-1">
-                                  <span className="text-[11px] font-black text-blue-600 block tabular-nums leading-none truncate">
+                                <div className="flex-1 text-right min-w-0 px-1">
+                                  <span className="text-[10px] font-black text-blue-600 block tabular-nums leading-none truncate text-right">
                                     ${(item.quantity * item.price).toLocaleString()}
                                   </span>
                                 </div>
