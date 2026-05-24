@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchSalesData, calculateAnalytics } from './services/dataService';
-import { SaleRecord, SalesAnalytics, SavedOrder } from './types';
+import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, saveOrderToSheet } from './services/dataService';
+import { SaleRecord, SalesAnalytics, SavedOrder, Customer } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
@@ -14,6 +14,7 @@ import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as 
 const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +32,8 @@ const App: React.FC = () => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
   }, [savedOrders]);
 
-  const handleSaveOrder = (order: SavedOrder) => {
+  const handleSaveOrder = async (order: SavedOrder) => {
+    // 1. Save to localStorage first (immediate UI feedback)
     setSavedOrders(prev => {
       const idx = prev.findIndex(o => o.id === order.id);
       if (idx !== -1) {
@@ -43,6 +45,19 @@ const App: React.FC = () => {
     });
     setEditingOrder(null);
     setActiveTab('saved_orders');
+
+    // 2. Sync to Google Sheets (background)
+    try {
+      await saveOrderToSheet(order.items, {
+        customerName: order.customerName,
+        salesName: order.salesName,
+        totalAmount: order.orderAmount,
+        remark: order.remark
+      });
+      console.log('Order synced to Google Sheets successfully');
+    } catch (err) {
+      console.error('Failed to sync order to Google Sheets:', err);
+    }
   };
 
   const handleEditOrder = (order: SavedOrder) => {
@@ -64,12 +79,19 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, source } = await fetchSalesData(customId);
+      const [salesResult, customerResult] = await Promise.all([
+        fetchSalesData(customId),
+        fetchCustomerGrades()
+      ]);
+
+      const { data, source } = salesResult;
+      
       if (data.records.length === 0) {
         setError('No sales records found in the dataset.');
       } else {
         setRecords(data.records);
         setHeaders(data.headers);
+        setCustomers(customerResult);
         setDataSource(source);
         const calculated = calculateAnalytics(data.records);
         setAnalytics(calculated);
@@ -82,8 +104,15 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    const params = new URLSearchParams(window.location.search);
+    const urlSheetId = params.get('sheetId');
+    if (urlSheetId) {
+      setSheetId(urlSheetId);
+      loadData(urlSheetId);
+    } else {
+      loadData();
+    }
+  }, [loadData]);
 
   const NavItems = () => (
     <>
@@ -302,7 +331,7 @@ const App: React.FC = () => {
           ) : activeTab === 'collections' ? (
             <CollectionsTable data={records} />
           ) : activeTab === 'inactive' ? (
-            <InactiveCustomers data={records} />
+            <InactiveCustomers data={records} masters={customers} />
           ) : activeTab === 'grades' ? (
             <CustomerGrades />
           ) : activeTab === 'pivot' ? (

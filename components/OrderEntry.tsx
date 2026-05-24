@@ -45,6 +45,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
       setFavorites([]);
     }
   }, [selectedRole]);
+
   const [activeTab, setActiveTab] = useState<'order' | 'favorites'>('order');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,14 +83,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      const [customerData, productData] = await Promise.all([
-        fetchCustomerGrades(),
-        fetchProducts()
-      ]);
-      setCustomers(customerData);
-      setProducts(productData);
-      
-      setLoading(false);
+      try {
+        const [customerData, productData] = await Promise.all([
+          fetchCustomerGrades(),
+          fetchProducts()
+        ]);
+        setCustomers(customerData);
+        setProducts(productData);
+      } catch (e) {
+        console.error('Failed to load data', e);
+      } finally {
+        setLoading(false);
+      }
     };
     loadData();
   }, []);
@@ -116,8 +121,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   const parseOuterBoxInfo = (name: string) => {
     if (name.includes('/')) {
-      // Regex to find number/unitName
-      // Example: "6/箱" -> 6 and "箱", "10/條" -> 10 and "條"
       const match = name.match(/(\d+)\/([^\s\x00-\x1F\x7F]+)/);
       if (match) {
         return {
@@ -128,6 +131,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     }
     return null;
   };
+
+  const selectedCustomerInfo = useMemo(() => {
+    return customers.find(c => c.name === selectedCustomer);
+  }, [customers, selectedCustomer]);
 
   const handleAddProduct = (product: Product) => {
     const boxInfo = parseOuterBoxInfo(product.name);
@@ -197,14 +204,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     if (!newCustomerName.trim() || !selectedRole) return;
     setIsSubmitting(true);
     try {
-      const success = await addCustomerToSheet(newCustomerName.trim(), selectedRole);
-      if (success) {
+      const result = await addCustomerToSheet(newCustomerName.trim(), selectedRole);
+      if (result.success) {
+        // Calculate row number: use returned row from API if present, or fallback to customers.length + 2
+        const rowNumber = result.row || (customers.length + 2);
+        
         // Refresh customer list
         const customerData = await fetchCustomerGrades();
         setCustomers(customerData);
         setNewCustomerName('');
         setShowAddCustomerModal(false);
-        alert('客戶已成功添加！');
+        alert(`客戶屬添加成功！\n客戶清單之最後行號為：第 ${rowNumber} 行`);
+      } else {
+        alert('添加客戶失敗，請重試。');
       }
     } catch (error) {
       console.error('Failed to add customer:', error);
@@ -255,24 +267,151 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
       baseList = baseList.filter(c => c.district === selectedDistrict);
     }
 
-    if (!searchQuery.trim()) return baseList;
+    let result = baseList;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = baseList.filter(c => 
+        c.name.toLowerCase().includes(query) || 
+        (selectedRole === 'Admin' && c.sales.toLowerCase().includes(query))
+      );
+    }
 
-    const query = searchQuery.toLowerCase();
-    return baseList.filter(c => 
-      c.name.toLowerCase().includes(query) || 
-      (selectedRole === 'Admin' && c.sales.toLowerCase().includes(query))
-    );
+    return [...result].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
   }, [customers, selectedRole, searchQuery, selectedDistrict]);
 
-  const selectedCustomerInfo = useMemo(() => {
-    return customers.find(c => c.name === selectedCustomer);
-  }, [customers, selectedCustomer]);
+  const renderModals = () => (
+    <>
+      {/* Add Customer Modal */}
+      <AnimatePresence>
+        {showAddCustomerModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddCustomerModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-blue-100 rounded-2xl">
+                  <UserPlus className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Add New Customer</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adding to customer_cat (Col A)</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Customer Name</label>
+                  <input 
+                    type="text"
+                    autoFocus
+                    placeholder="Enter customer name..."
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-bold"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={() => setShowAddCustomerModal(false)}
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    onClick={handleAddCustomerConfirm}
+                    disabled={isSubmitting || !newCustomerName.trim()}
+                    className="flex-1 px-4 py-3 rounded-xl bg-blue-600 text-white text-xs font-black hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting && <Loader2 className="w-3 h-3 animate-spin" />}
+                    CONFIRM
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Product Modal */}
+      <AnimatePresence>
+        {showAddProductModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddProductModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-emerald-100 rounded-2xl">
+                  <PackagePlus className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Add New Product</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adding to raw (Col C)</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Product Name</label>
+                  <input 
+                    type="text"
+                    autoFocus
+                    placeholder="Enter product name..."
+                    value={newProductName}
+                    onChange={(e) => setNewProductName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={() => setShowAddProductModal(false)}
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    onClick={handleAddProductConfirm}
+                    disabled={isSubmitting || !newProductName.trim()}
+                    className="flex-1 px-4 py-3 rounded-xl bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting && <Loader2 className="w-3 h-3 animate-spin" />}
+                    CONFIRM
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 
   if (selectedCustomer) {
     return (
       <div className="min-h-screen w-full bg-white animate-in fade-in slide-in-from-right-4 duration-500 flex flex-col overflow-x-hidden">
         {/* Top Layer: Product Search Box */}
-        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50">
+        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50 shadow-sm">
           <div className="w-full max-w-md mx-auto relative flex items-center gap-2">
             <button 
               onClick={() => setSelectedCustomer(null)}
@@ -314,7 +453,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
           {productSearchQuery && (
             <div className="max-w-md mx-auto relative">
               <div 
-                onScroll={() => searchInputRef.current?.blur()}
                 className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-[50vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5"
               >
                 {loading ? (
@@ -360,7 +498,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
         {/* Scrollable Content: Selected Products or Favorites */}
         <div className="flex-1 overflow-hidden bg-slate-50/30 flex flex-col relative">
-          {/* Tab Switcher Labels (Optional visual aid) */}
           <div className="flex px-2 sm:px-4 pt-2 gap-4">
             <button 
               onClick={() => setActiveTab('order')}
@@ -391,16 +528,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                   className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
-                  drag="x"
-                  dragConstraints={{ left: 0, right: 0 }}
-                  onDragEnd={(_, info) => {
-                    if (info.offset.x < -50) setActiveTab('favorites');
-                  }}
                 >
                   <div className="max-w-md mx-auto">
-                    {/* Selected Products List */}
                     <div className="space-y-4">
-                    <div className="flex flex-col px-1">
+                      <div className="flex flex-col px-1">
                         <div className="flex items-center justify-between gap-3 mb-2">
                           <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 min-w-0">
                             <span className="truncate">{selectedCustomer}</span> 
@@ -438,141 +569,127 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
                       {showRemarkInput && (
                         <motion.div 
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          className="px-1 mt-2 mb-4 overflow-hidden"
-                        >
-                          <textarea
-                            placeholder="Input text remarks (Sales name, specific delivery instructions etc.)..."
-                            value={remark}
-                            onChange={(e) => setRemark(e.target.value)}
-                            className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
-                          />
-                        </motion.div>
-                      )}
-
-                      {selectedItems.length === 0 ? (
-                        <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4">
-                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
-                            <Package className="w-8 h-8 opacity-20" />
-                          </div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No items selected</p>
-                          <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">Swipe left for Favorites ←</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {selectedItems.map((item) => (
-                            <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-2 shadow-sm hover:shadow-md transition-all group">
-                              {/* Row 1: Name and Toggle */}
-                              <div className="flex items-center justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-1.5 flex-1">
-                                  <button
-                                    onClick={() => {
-                                      const prod = products.find(p => p.name === item.name);
-                                      if (prod) toggleFavorite(prod);
-                                    }}
-                                    className={`p-1 rounded-md transition-colors ${
-                                      isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
-                                    }`}
-                                  >
-                                    <Star className={`w-3.5 h-3.5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
-                                  </button>
-                                  <h5 className="text-[11px] font-black text-slate-900 leading-tight break-words">{item.name}</h5>
-                                </div>
-                                {item.unitsPerBox && (
-                                  <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
-                                    <button
-                                      onClick={() => {
-                                        if (item.isOuterBox) {
-                                          handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
-                                        }
-                                      }}
-                                      className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
-                                        !item.isOuterBox 
-                                          ? 'bg-white text-blue-600 shadow-sm' 
-                                          : 'text-slate-400 hover:text-slate-600'
-                                      }`}
-                                    >
-                                      單位
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        if (!item.isOuterBox) {
-                                          handleUpdateItem(item.id, { isOuterBox: true, quantity: item.unitsPerBox || 12 });
-                                        }
-                                      }}
-                                      className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
-                                        item.isOuterBox 
-                                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
-                                          : 'text-slate-400 hover:text-slate-600'
-                                      }`}
-                                    >
-                                      {item.outerBoxUnit || '箱'}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Row 2: Quantity, Price, Trash */}
-                              <div className="flex items-center gap-1.5">
-                                {/* Quantity */}
-                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden w-20 flex-shrink-0">
-                                  <button 
-                                    onClick={() => {
-                                      const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
-                                      handleUpdateItem(item.id, { quantity: Math.max(0, item.quantity - step) });
-                                    }}
-                                    className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
-                                  >
-                                    <Minus className="w-2.5 h-2.5" />
-                                  </button>
-                                  <input
-                                    type="number"
-                                    value={item.quantity}
-                                    onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
-                                    className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                  />
-                                  <button 
-                                    onClick={() => {
-                                      const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
-                                      handleUpdateItem(item.id, { quantity: item.quantity + step });
-                                    }}
-                                    className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
-                                  >
-                                    <Plus className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-
-                                {/* Price */}
-                                <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
-                                  <span className="text-slate-400 text-[8px] font-bold mr-0.5">$</span>
-                                  <input
-                                    type="number"
-                                    value={item.price}
-                                    onChange={(e) => handleUpdateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
-                                    className="w-full bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                  />
-                                </div>
-
-                                {/* Subtotal */}
-                                <div className="flex-1 text-right min-w-0 px-1">
-                                  <span className="text-[10px] font-black text-blue-600 block tabular-nums leading-none truncate text-right">
-                                    ${(item.quantity * item.price).toLocaleString()}
-                                  </span>
-                                </div>
-
-                                {/* Trash */}
-                                <button 
-                                  onClick={() => handleRemoveItem(item.id)}
-                                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-300 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                           initial={{ height: 0, opacity: 0 }}
+                           animate={{ height: 'auto', opacity: 1 }}
+                           className="px-1 mt-2 mb-4 overflow-hidden"
+                         >
+                           <textarea
+                             placeholder="Input text remarks (Sales name, specific delivery instructions etc.)..."
+                             value={remark}
+                             onChange={(e) => setRemark(e.target.value)}
+                             className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
+                           />
+                         </motion.div>
+                       )}
+ 
+                       {selectedItems.length === 0 ? (
+                         <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4 text-center">
+                           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
+                             <Package className="w-8 h-8 opacity-20" />
+                           </div>
+                           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No items selected</p>
+                           <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-relaxed">Search products or add from favorites</p>
+                         </div>
+                       ) : (
+                         <div className="space-y-4">
+                           {selectedItems.map((item) => (
+                             <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-2 shadow-sm hover:shadow-md transition-all group">
+                               <div className="flex items-center justify-between gap-2 mb-2">
+                                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                   <button
+                                     onClick={() => {
+                                       const prod = products.find(p => p.name === item.name);
+                                       if (prod) toggleFavorite(prod);
+                                     }}
+                                     className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                                       isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
+                                     }`}
+                                   >
+                                     <Star className={`w-3.5 h-3.5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
+                                   </button>
+                                   <h5 className="text-[11px] font-black text-slate-900 leading-tight truncate">{item.name}</h5>
+                                 </div>
+                                 {item.unitsPerBox && (
+                                   <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
+                                     <button
+                                       onClick={() => handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 })}
+                                       className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                         !item.isOuterBox 
+                                           ? 'bg-white text-blue-600 shadow-sm' 
+                                           : 'text-slate-400 hover:text-slate-600'
+                                       }`}
+                                     >
+                                       單位
+                                     </button>
+                                     <button
+                                       onClick={() => handleUpdateItem(item.id, { isOuterBox: true, quantity: item.unitsPerBox || 12 })}
+                                       className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                         item.isOuterBox 
+                                           ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
+                                           : 'text-slate-400 hover:text-slate-600'
+                                       }`}
+                                     >
+                                       {item.outerBoxUnit || '箱'}
+                                     </button>
+                                   </div>
+                                 )}
+                               </div>
+ 
+                               <div className="flex items-center gap-1.5">
+                                 <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden w-20 flex-shrink-0">
+                                   <button 
+                                     onClick={() => {
+                                       const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
+                                       handleUpdateItem(item.id, { quantity: Math.max(0, item.quantity - step) });
+                                     }}
+                                     className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                   >
+                                     <Minus className="w-2.5 h-2.5" />
+                                   </button>
+                                   <input
+                                     type="number"
+                                     value={item.quantity}
+                                     onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
+                                     className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                   />
+                                   <button 
+                                     onClick={() => {
+                                       const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
+                                       handleUpdateItem(item.id, { quantity: item.quantity + step });
+                                     }}
+                                     className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                   >
+                                     <Plus className="w-2.5 h-2.5" />
+                                   </button>
+                                 </div>
+ 
+                                 <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
+                                   <span className="text-slate-400 text-[8px] font-bold mr-0.5">$</span>
+                                   <input
+                                     type="number"
+                                     value={item.price}
+                                     onChange={(e) => handleUpdateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                     className="w-full bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                   />
+                                 </div>
+ 
+                                 <div className="flex-1 text-right min-w-0 px-1">
+                                   <span className="text-[10px] font-black text-blue-600 block tabular-nums leading-none truncate text-right">
+                                     ${(item.quantity * item.price).toLocaleString()}
+                                   </span>
+                                 </div>
+ 
+                                 <button 
+                                   onClick={() => handleRemoveItem(item.id)}
+                                   className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-300 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+                                 >
+                                   <Trash2 className="w-3 h-3" />
+                                 </button>
+                               </div>
+                             </div>
+                           ))}
+                         </div>
+                       )}
                     </div>
                   </div>
                 </motion.div>
@@ -584,53 +701,48 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                   className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
-                  drag="x"
-                  dragConstraints={{ left: 0, right: 0 }}
-                  onDragEnd={(_, info) => {
-                    if (info.offset.x > 50) setActiveTab('order');
-                  }}
                 >
                   <div className="max-w-md mx-auto">
-                    <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1">
-                      Favorites <span className="text-slate-300 ml-2">Swipe right for Order →</span>
+                    <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
+                       Favorites
                     </h4>
-                    
+                     
                     {favorites.length === 0 ? (
-                      <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4 text-center">
-                        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
-                          <Star className="w-8 h-8 opacity-20" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No favorites yet</p>
-                        <p className="text-[8px] font-bold text-slate-300 leading-relaxed max-w-[150px]">Star products in search or order to save them here</p>
-                      </div>
+                       <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4 text-center">
+                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
+                           <Star className="w-8 h-8 opacity-20" />
+                         </div>
+                         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No favorites yet</p>
+                         <p className="text-[8px] font-bold text-slate-300 leading-relaxed max-w-[150px]">Star products in search to save them here</p>
+                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-2">
-                        {favorites.map((p, idx) => (
-                          <div
-                            key={idx}
-                            className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 transition-all group"
-                          >
-                            <div className="flex items-center gap-2 flex-1 truncate pr-2">
-                              <button
-                                onClick={() => toggleFavorite(p)}
-                                className="p-1 rounded-md text-yellow-400 transition-colors"
-                              >
-                                <Star className="w-3.5 h-3.5 fill-current" />
-                              </button>
-                              <span className="text-[11px] font-bold text-slate-700 leading-snug truncate">{p.name}</span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                handleAddProduct(p);
-                                setActiveTab('order');
-                              }}
-                              className="bg-blue-600 text-white p-1.5 rounded-lg shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                       <div className="grid grid-cols-1 gap-2">
+                         {favorites.map((p, idx) => (
+                           <div
+                             key={idx}
+                             className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 transition-all group"
+                           >
+                             <div className="flex items-center gap-2 flex-1 truncate pr-2">
+                               <button
+                                 onClick={() => toggleFavorite(p)}
+                                 className="p-1 rounded-md text-yellow-400 transition-colors"
+                               >
+                                 <Star className="w-3.5 h-3.5 fill-current" />
+                               </button>
+                               <span className="text-[11px] font-bold text-slate-700 leading-snug truncate">{p.name}</span>
+                             </div>
+                             <button
+                               onClick={() => {
+                                 handleAddProduct(p);
+                                 setActiveTab('order');
+                               }}
+                               className="bg-blue-600 text-white p-1.5 rounded-lg shadow-lg shadow-blue-600/20 active:scale-95 transition-all flex-shrink-0"
+                             >
+                               <Plus className="w-3 h-3" />
+                             </button>
+                           </div>
+                         ))}
+                       </div>
                     )}
                   </div>
                 </motion.div>
@@ -638,7 +750,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             </AnimatePresence>
           </div>
         </div>
-
+        {renderModals()}
       </div>
     );
   }
@@ -660,7 +772,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             </div>
           </div>
 
-          {/* Search Bar */}
           <div className="relative mb-4 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -690,7 +801,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             )}
           </div>
 
-          {/* District Quick Filter - Row */}
           <div className="flex gap-1 mb-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar scroll-smooth">
             {districts.map((d) => (
               <button
@@ -707,7 +817,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             ))}
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20">
             {loading ? (
               <div className="col-span-2 flex flex-col items-center justify-center p-20 text-slate-300">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
@@ -723,9 +833,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 <button
                   key={i}
                   onClick={() => setSelectedCustomer(c.name)}
-                  className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 hover:bg-slate-50/50 transition-all duration-200 group active:scale-[0.98]"
+                  className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 hover:bg-slate-50/50 transition-all duration-200 group active:scale-[0.98] text-left"
                 >
-                  <div className="text-left overflow-hidden">
+                  <div className="overflow-hidden">
                     <p className="text-slate-900 font-bold text-[11px] leading-tight truncate">{c.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={`text-[8px] font-black uppercase tracking-widest px-1 rounded ${
@@ -744,139 +854,21 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             )}
           </div>
         </div>
-
-        {/* Add Customer Modal */}
-        <AnimatePresence>
-          {showAddCustomerModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowAddCustomerModal(false)}
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="relative bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
-              >
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-3 bg-blue-100 rounded-2xl">
-                    <UserPlus className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900">Add New Customer</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adding to customer_cat (Col A)</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Customer Name</label>
-                    <input 
-                      type="text"
-                      autoFocus
-                      placeholder="Enter customer name..."
-                      value={newCustomerName}
-                      onChange={(e) => setNewCustomerName(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-bold"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
-                    <button 
-                      onClick={() => setShowAddCustomerModal(false)}
-                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors"
-                    >
-                      CANCEL
-                    </button>
-                    <button 
-                      onClick={handleAddCustomerConfirm}
-                      disabled={isSubmitting || !newCustomerName.trim()}
-                      className="flex-1 px-4 py-3 rounded-xl bg-blue-600 text-white text-xs font-black hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting && <Loader2 className="w-3 h-3 animate-spin" />}
-                      CONFIRM
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* Add Product Modal */}
-        <AnimatePresence>
-          {showAddProductModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowAddProductModal(false)}
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="relative bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
-              >
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-3 bg-emerald-100 rounded-2xl">
-                    <PackagePlus className="w-6 h-6 text-emerald-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900">Add New Product</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adding to raw (Col C)</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Product Name</label>
-                    <input 
-                      type="text"
-                      autoFocus
-                      placeholder="Enter product name..."
-                      value={newProductName}
-                      onChange={(e) => setNewProductName(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
-                    <button 
-                      onClick={() => setShowAddProductModal(false)}
-                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors"
-                    >
-                      CANCEL
-                    </button>
-                    <button 
-                      onClick={handleAddProductConfirm}
-                      disabled={isSubmitting || !newProductName.trim()}
-                      className="flex-1 px-4 py-3 rounded-xl bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting && <Loader2 className="w-3 h-3 animate-spin" />}
-                      CONFIRM
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        {renderModals()}
       </div>
     );
   }
 
   return (
     <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
-      {/* Background Orbs */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
+      
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-white/5 border border-white/10 px-4 py-2.5 rounded-2xl flex items-center gap-2.5 backdrop-blur-md z-20 shadow-lg">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">客戶總數 / Total Customers</span>
+        <span className="text-emerald-400 font-mono font-black text-sm">{loading ? '...' : customers.length}</span>
+      </div>
       
       <div className="relative z-10 w-full max-w-sm px-2 sm:px-0">
         <button 
@@ -887,43 +879,36 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
           <span className="text-[10px] font-black uppercase tracking-[0.3em]">返回主頁 / EXIT SYSTEM</span>
         </button>
 
-        <div className="mb-8 text-center">
-          <h2 className="text-4xl font-black text-white tracking-tighter mb-2">
-            落單系統 <span className="text-blue-500">.</span>
-          </h2>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.2em]">Select Role to Continue</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {salesPeople.map((person) => (
-            <button
-              key={person}
-              onClick={() => setSelectedRole(person)}
-              className="group bg-slate-900 border border-slate-800 hover:border-blue-500/50 p-5 rounded-[2rem] transition-all duration-300 hover:bg-slate-900/60 active:scale-[0.98] flex flex-col items-center gap-3 shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors relative z-10">
-                <User className="w-6 h-6" />
-              </div>
-              <span className="text-sm font-black text-slate-200 group-hover:text-white transition-colors uppercase tracking-widest relative z-10">{person}</span>
-            </button>
-          ))}
-          
-          <button
-            onClick={() => setSelectedRole('Admin')}
-            className="group col-span-2 bg-slate-900 border border-slate-800 hover:border-slate-700 p-5 rounded-[2rem] transition-all duration-300 hover:bg-slate-900/60 active:scale-[0.98] flex items-center justify-center gap-4 text-slate-200 mt-2 shadow-2xl relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-blue-400 transition-colors relative z-10">
-              <ShieldCheck className="w-5 h-5" />
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 shadow-2xl">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-2xl shadow-blue-600/40 mb-6 rotate-3">
+              <ShieldCheck className="w-10 h-10 text-white" />
             </div>
-            <span className="text-sm font-black uppercase tracking-[0.2em] group-hover:text-white transition-colors relative z-10">ADMIN LOGIN</span>
-          </button>
+            <h2 className="text-3xl font-black text-white tracking-tighter mb-2">WHATS-ORDER</h2>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">Authentication Required</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {salesPeople.map((role) => (
+              <button
+                key={role}
+                onClick={() => setSelectedRole(role)}
+                className="group relative bg-white/5 hover:bg-blue-600 border border-white/5 hover:border-blue-500 p-6 rounded-3xl transition-all duration-300 flex flex-col items-center gap-3 overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <User className="w-6 h-6 text-slate-400 group-hover:text-white transition-colors relative z-10" />
+                <span className="text-xs font-black text-slate-300 group-hover:text-white transition-colors relative z-10 uppercase tracking-widest">{role}</span>
+              </button>
+            ))}
+            <button
+              onClick={() => setSelectedRole('Admin')}
+              className="col-span-2 group relative bg-slate-800/50 hover:bg-slate-700 border border-white/5 p-6 rounded-3xl transition-all duration-300 flex items-center justify-center gap-3 overflow-hidden mt-2"
+            >
+              <ShieldCheck className="w-5 h-5 text-slate-500 group-hover:text-white" />
+              <span className="text-xs font-black text-slate-400 group-hover:text-white uppercase tracking-widest">Admin Access</span>
+            </button>
+          </div>
         </div>
-        
-        <p className="mt-10 text-center text-[9px] font-bold text-slate-700 uppercase tracking-[0.25em]">
-          WS SALES SYSTEM v1.0
-        </p>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
-export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWGTRyxsujR-InMF-oGELmQ1ew5P27yIakOnP5EyLALvelZEJNpfMfgVZWzrY3Wpj7fw/exec';
+export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVT8yF9Zc1DXyR43eD_fzOU4bw8mnLosJ_kMMX0_hI7AcrM2tiwx0CRCqC6Fudnobmtw/exec';
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
@@ -347,23 +347,52 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
   }
 };
 
-export const addCustomerToSheet = async (name: string, user: string): Promise<boolean> => {
+export interface AddCustomerResult {
+  success: boolean;
+  row?: number;
+  message?: string;
+}
+
+export const addCustomerToSheet = async (name: string, user: string): Promise<AddCustomerResult> => {
+  const formattedUser = user.charAt(0).toUpperCase() + user.slice(1).toLowerCase();
+  const payload = {
+    action: 'addCustomer',
+    name,
+    user: formattedUser
+  };
+
   try {
-    const payload = {
-      action: 'addCustomer',
-      name,
-      user
-    };
+    // Try standard fetch without no-cors mode, so we can read the JSON response containing the row number
+    const response = await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (response.ok) {
+      const json = await response.json();
+      if (json.status === 'success') {
+        const rowMatch = json.message?.match(/row\s+(\d+)/i);
+        const row = rowMatch ? parseInt(rowMatch[1], 10) : undefined;
+        return { success: true, row, message: json.message };
+      }
+    }
+  } catch (corsError) {
+    console.warn('CORS request failed or redirection blocked reading response, trying no-cors fallback...', corsError);
+  }
+
+  // Fallback to mode: no-cors to guarantee the write works behind the scenes even if the browser blocks reading the response
+  try {
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return true;
+    return { success: true };
   } catch (error) {
     console.error('Error adding customer:', error);
-    return false;
+    return { success: false };
   }
 };
 
@@ -382,6 +411,25 @@ export const addProductToSheet = async (name: string): Promise<boolean> => {
     return true;
   } catch (error) {
     console.error('Error adding product:', error);
+    return false;
+  }
+};
+
+export const saveOrderToSheet = async (order: SaleRecord[] | any, meta: { customerName: string; salesName: string; totalAmount: number; remark: string }): Promise<boolean> => {
+  try {
+    const payload = {
+      meta,
+      items: order
+    };
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (error) {
+    console.error('Error saving order:', error);
     return false;
   }
 };

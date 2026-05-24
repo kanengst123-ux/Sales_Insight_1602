@@ -1,41 +1,46 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { SaleRecord } from '../types';
+import { SaleRecord, Customer } from '../types';
 import { Users, Clock, AlertCircle, ChevronRight, X, Search } from 'lucide-react';
 
 interface InactiveCustomersProps {
   data: SaleRecord[];
+  masters?: Customer[];
 }
 
-const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
+const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data, masters = [] }) => {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [showNewCustomerPopup, setShowNewCustomerPopup] = useState(false);
+  const [popupContent, setPopupContent] = useState({ title: '', message: '', type: 'new' });
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const allCustomers = useMemo(() => {
+    // If we have masters, use them as primary source for names
+    if (masters && masters.length > 0) {
+      return masters.map(m => ({ name: m.name, user: m.sales || 'Unknown' }));
+    }
+
     const latestUserMap: Record<string, string> = {};
     data.forEach(item => {
       const customer = String(item.customerName || 'Unknown').trim();
       const user = String(item.userName || 'Unknown').trim();
-      const date = new Date(item.orderDate);
       
-      // We want the most recent user associated with this customer
       if (!latestUserMap[customer]) {
         latestUserMap[customer] = user;
       }
     });
     return Object.entries(latestUserMap).map(([name, user]) => ({ name, user }));
-  }, [data]);
+  }, [data, masters]);
 
   const suggestions = useMemo(() => {
     if (!searchInput.trim()) return [];
     const term = searchInput.toLowerCase().trim();
     return allCustomers
       .filter(c => c.name.toLowerCase().includes(term))
-      .slice(0, 8); // Limit to 8 suggestions
+      .slice(0, 8); 
   }, [allCustomers, searchInput]);
 
   useEffect(() => {
@@ -80,7 +85,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
         daysInactive: Math.floor((now.getTime() - stats.lastDate.getTime()) / (1000 * 60 * 60 * 24))
       }))
       .filter(item => item.lastDate < sevenDaysAgo)
-      .sort((a, b) => a.daysInactive - b.daysInactive); // Fewest days inactive first
+      .sort((a, b) => a.daysInactive - b.daysInactive); 
   }, [data]);
 
   const filteredInactiveData = useMemo(() => {
@@ -94,7 +99,6 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
   const customerDetails = useMemo(() => {
     if (!selectedCustomer) return [];
     
-    // Find the last date for this customer
     const customerRecords = data.filter(item => String(item.customerName || '').trim() === selectedCustomer);
     if (customerRecords.length === 0) return [];
     
@@ -104,7 +108,6 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
       return currDate > latestDate ? curr.orderDate : latest;
     }, customerRecords[0].orderDate);
 
-    // Filter records for that specific customer and date
     return customerRecords.filter(item => item.orderDate === lastDateStr);
   }, [data, selectedCustomer]);
 
@@ -116,13 +119,34 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
   const handleSearch = () => {
     const term = searchInput.toLowerCase().trim();
     if (term) {
-      // Search the entire Customer Column (Col H) from the raw data
-      const existsInTotalData = data.some(item => 
-        String(item.customerName || '').toLowerCase().includes(term)
+      // 1. Check if found in inactive list (already displayed)
+      const foundInInactive = inactiveData.filter(item => 
+        item.customer.toLowerCase().includes(term)
       );
-      
-      if (!existsInTotalData) {
-        setShowNewCustomerPopup(true);
+
+      if (foundInInactive.length === 0) {
+        // 2. Search in MASTERS (Col A of customer_cat)
+        const matchedMaster = allCustomers.find(c => 
+          c.name.toLowerCase().includes(term)
+        );
+        
+        if (matchedMaster) {
+          // Exists but is active (not in inactive list)
+          setPopupContent({
+            title: '活躍客戶',
+            message: `「${matchedMaster.name}」在過去 7 天內有訂單記錄，不屬於非活躍客戶。`,
+            type: 'active'
+          });
+          setShowNewCustomerPopup(true);
+        } else {
+          // Not found at all
+          setPopupContent({
+            title: '新客!',
+            message: `在客戶清單 (customer_cat) 中找不到「${searchInput}」。`,
+            type: 'new'
+          });
+          setShowNewCustomerPopup(true);
+        }
       }
     }
     setAppliedSearch(searchInput);
@@ -136,20 +160,26 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data }) => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full relative">
-      {/* New Customer Popup */}
+      {/* Search Feedback Popup */}
       {showNewCustomerPopup && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300 p-8 text-center">
-            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Users className="w-10 h-10 text-amber-600" />
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+              popupContent.type === 'active' ? 'bg-blue-100' : 'bg-amber-100'
+            }`}>
+              {popupContent.type === 'active' ? (
+                <Clock className="w-10 h-10 text-blue-600" />
+              ) : (
+                <Users className="w-10 h-10 text-amber-600" />
+              )}
             </div>
-            <h3 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">新客!</h3>
-            <p className="text-slate-500 font-medium mb-8">This customer was not found in the inactive list.</p>
+            <h3 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">{popupContent.title}</h3>
+            <p className="text-slate-500 font-medium mb-8 leading-relaxed truncate-3-lines">{popupContent.message}</p>
             <button 
               onClick={() => setShowNewCustomerPopup(false)}
               className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20 active:scale-95"
             >
-              Got it
+              確定
             </button>
           </div>
         </div>
