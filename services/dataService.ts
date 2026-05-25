@@ -2,7 +2,7 @@
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
-export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxTE_vzsW_PgC0exqDDafe34ahEDZ2sdy1APO0Kywh8bm3kvDuD5Lo76J9B-xorUSQKRw/exec';
+export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJBpLD4XstIGc_47V4ys3WYr_OX5vfsc36u5aEIsAyv06wYDWT_FFuAooQVMt1Pq8R/exec';
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
@@ -83,6 +83,24 @@ const parseNum = (val: any): number => {
 };
 
 export const fetchCustomerGrades = async (): Promise<Customer[]> => {
+  try {
+    // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
+    if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
+      const liveUrl = `${UPDATE_SCRIPT_URL}?action=getCustomers&t=${Date.now()}`;
+      const res = await fetch(liveUrl, { method: 'GET' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          console.log('Successfully fetched live customer list, count:', json.length);
+          return json;
+        }
+      }
+    }
+  } catch (liveError) {
+    console.warn('Unable to fetch live grades from GAS, falling back to published CSV:', liveError);
+  }
+
+  // 2. Fallback to published CSV if GAS is unavailable/fails
   const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
   const cacheBuster = `&t=${Date.now()}`;
   try {
@@ -268,6 +286,24 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 };
 
 export const fetchProducts = async (customId?: string): Promise<Product[]> => {
+  try {
+    // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
+    if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
+      const liveUrl = `${UPDATE_SCRIPT_URL}?action=getProducts&t=${Date.now()}`;
+      const res = await fetch(liveUrl, { method: 'GET' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          console.log('Successfully fetched live product list, count:', json.length);
+          return json.sort((a, b) => a.name.localeCompare(b.name));
+        }
+      }
+    }
+  } catch (liveError) {
+    console.warn('Unable to fetch live products from GAS, falling back to published CSV:', liveError);
+  }
+
+  // 2. Fallback to published CSV if GAS is unavailable/fails
   const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
   
   try {
@@ -417,6 +453,25 @@ export const writeTradeLogToSheet = async (rows: any[][]): Promise<boolean> => {
     return true;
   } catch (error) {
     console.error('Error writing trade log:', error);
+    return false;
+  }
+};
+
+export const deleteOrderFromSheet = async (orderId: string): Promise<boolean> => {
+  try {
+    const payload = {
+      action: 'deleteOrder',
+      orderId
+    };
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (error) {
+    console.error('Error deleting order:', error);
     return false;
   }
 };

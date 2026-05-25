@@ -71,7 +71,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     
     customers.forEach(c => {
       const isVisible = selectedRole === 'Admin' 
-        ? c.name === '落鋪'
+        ? ['落鋪', 'HKTVMALL', '其他'].includes(c.name)
         : c.sales.toUpperCase() === (selectedRole || '').toUpperCase();
       
       if (isVisible && c.district) {
@@ -260,7 +260,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     
     let baseList: Customer[] = [];
     if (selectedRole === 'Admin') {
-      baseList = customers.filter(c => c.name === '落鋪');
+      baseList = customers.filter(c => ['落鋪', 'HKTVMALL', '其他'].includes(c.name));
     } else {
       baseList = customers.filter(c => c.sales.toUpperCase() === selectedRole.toUpperCase());
     }
@@ -495,6 +495,16 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
           {productSearchQuery && (
             <div className="max-w-md mx-auto relative">
               <div 
+                onScroll={() => {
+                  if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                }}
+                onTouchMove={() => {
+                  if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                }}
                 className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-[50vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5"
               >
                 {loading ? (
@@ -864,7 +874,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             ))}
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20">
+          <div 
+            onScroll={() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            }}
+            onTouchMove={() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            }}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20"
+          >
             {loading ? (
               <div className="col-span-2 flex flex-col items-center justify-center p-20 text-slate-300">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />

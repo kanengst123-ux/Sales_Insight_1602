@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet } from './services/dataService';
+import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet, deleteOrderFromSheet } from './services/dataService';
 import { SaleRecord, SalesAnalytics, SavedOrder, Customer } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
@@ -56,10 +56,26 @@ const App: React.FC = () => {
     setSavedOrders(prev => prev.filter(o => o.id !== orderId));
   };
 
-  const handleToggleHold = (orderId: string) => {
+  const handleToggleHold = async (orderId: string) => {
+    const order = savedOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const newIsHeld = !order.isHeld;
+
+    // Update local state
     setSavedOrders(prev => prev.map(o => 
-      o.id === orderId ? { ...o, isHeld: !o.isHeld } : o
+      o.id === orderId ? { ...o, isHeld: newIsHeld, isKeyedIn: newIsHeld ? false : o.isKeyedIn } : o
     ));
+
+    if (newIsHeld) {
+      try {
+        await deleteOrderFromSheet(orderId);
+        // Refresh the local data to reflect deletion/updates
+        loadData();
+      } catch (err) {
+        console.error("Failed to delete held order from sheet:", err);
+      }
+    }
   };
 
   const generateNextOrderId = (userName: string): string => {
