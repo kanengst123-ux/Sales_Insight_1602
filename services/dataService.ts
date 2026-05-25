@@ -2,7 +2,7 @@
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
-export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVT8yF9Zc1DXyR43eD_fzOU4bw8mnLosJ_kMMX0_hI7AcrM2tiwx0CRCqC6Fudnobmtw/exec';
+export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxTE_vzsW_PgC0exqDDafe34ahEDZ2sdy1APO0Kywh8bm3kvDuD5Lo76J9B-xorUSQKRw/exec';
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
@@ -150,7 +150,7 @@ const processRows = (rows: string[][]): SalesData => {
   };
 
   const idx = {
-    orderId: findColumn(headers, ['orderid', 'ref', 'invoice']),
+    orderId: findColumn(headers, ['orderid', 'id', 'ref', 'invoice']),
     orderDate: findColumn(headers, ['orderdate', 'date']),
     customerName: findColumn(headers, ['customer', 'user']),
     sales: findColumn(headers, ['sales', 'total']),
@@ -347,60 +347,47 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
   }
 };
 
-export interface AddCustomerResult {
-  success: boolean;
-  row?: number;
-  message?: string;
-}
-
-export const addCustomerToSheet = async (name: string, user: string): Promise<AddCustomerResult> => {
-  const formattedUser = user.charAt(0).toUpperCase() + user.slice(1).toLowerCase();
-  const payload = {
-    action: 'addCustomer',
-    name,
-    user: formattedUser
-  };
-
+export const addCustomerToSheet = async (name: string, user: string, district: string, grade: 'A' | 'B' | 'C'): Promise<boolean> => {
   try {
-    // Try standard fetch without no-cors mode, so we can read the JSON response containing the row number
-    const response = await fetch(UPDATE_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    if (response.ok) {
-      const json = await response.json();
-      if (json.status === 'success') {
-        const rowMatch = json.message?.match(/row\s+(\d+)/i);
-        const row = rowMatch ? parseInt(rowMatch[1], 10) : undefined;
-        return { success: true, row, message: json.message };
-      }
-    }
-  } catch (corsError) {
-    console.warn('CORS request failed or redirection blocked reading response, trying no-cors fallback...', corsError);
-  }
-
-  // Fallback to mode: no-cors to guarantee the write works behind the scenes even if the browser blocks reading the response
-  try {
+    // Title case the user (EVA -> Eva, etc.)
+    const formattedUser = user.charAt(0).toUpperCase() + user.slice(1).toLowerCase();
+    const payload = {
+      action: 'addCustomer',
+      name,
+      user: formattedUser,
+      district,
+      grade
+    };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return { success: true };
+    return true;
   } catch (error) {
     console.error('Error adding customer:', error);
-    return { success: false };
+    return false;
   }
 };
 
-export const addProductToSheet = async (name: string): Promise<boolean> => {
+export const addProductToSheet = async (name: string, username: string): Promise<boolean> => {
   try {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    const ddmmyyyyhhmmss = `${dd}${mm}${yyyy}${hh}${min}${ss}`;
+    const generatedId = `${username}${ddmmyyyyhhmmss}`;
+
     const payload = {
       action: 'addProduct',
-      name
+      name,
+      username,
+      id: generatedId
     };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
@@ -415,11 +402,11 @@ export const addProductToSheet = async (name: string): Promise<boolean> => {
   }
 };
 
-export const saveOrderToSheet = async (order: SaleRecord[] | any, meta: { customerName: string; salesName: string; totalAmount: number; remark: string }): Promise<boolean> => {
+export const writeTradeLogToSheet = async (rows: any[][]): Promise<boolean> => {
   try {
     const payload = {
-      meta,
-      items: order
+      action: 'writeTradeLog',
+      rows
     };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
@@ -429,7 +416,8 @@ export const saveOrderToSheet = async (order: SaleRecord[] | any, meta: { custom
     });
     return true;
   } catch (error) {
-    console.error('Error saving order:', error);
+    console.error('Error writing trade log:', error);
     return false;
   }
 };
+

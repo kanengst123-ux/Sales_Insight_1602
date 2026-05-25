@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, saveOrderToSheet } from './services/dataService';
+import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet } from './services/dataService';
 import { SaleRecord, SalesAnalytics, SavedOrder, Customer } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
@@ -23,6 +23,7 @@ const App: React.FC = () => {
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
+  const [isKeyingIn, setIsKeyingIn] = useState<boolean>(false);
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>(() => {
     const stored = localStorage.getItem('榮昇_saved_orders');
     return stored ? JSON.parse(stored) : [];
@@ -32,8 +33,7 @@ const App: React.FC = () => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
   }, [savedOrders]);
 
-  const handleSaveOrder = async (order: SavedOrder) => {
-    // 1. Save to localStorage first (immediate UI feedback)
+  const handleSaveOrder = (order: SavedOrder) => {
     setSavedOrders(prev => {
       const idx = prev.findIndex(o => o.id === order.id);
       if (idx !== -1) {
@@ -45,19 +45,6 @@ const App: React.FC = () => {
     });
     setEditingOrder(null);
     setActiveTab('saved_orders');
-
-    // 2. Sync to Google Sheets (background)
-    try {
-      await saveOrderToSheet(order.items, {
-        customerName: order.customerName,
-        salesName: order.salesName,
-        totalAmount: order.orderAmount,
-        remark: order.remark
-      });
-      console.log('Order synced to Google Sheets successfully');
-    } catch (err) {
-      console.error('Failed to sync order to Google Sheets:', err);
-    }
   };
 
   const handleEditOrder = (order: SavedOrder) => {
@@ -74,6 +61,135 @@ const App: React.FC = () => {
       o.id === orderId ? { ...o, isHeld: !o.isHeld } : o
     ));
   };
+
+  const generateNextOrderId = (userName: string): string => {
+    const prefix = userName.trim().toUpperCase();
+    if (!prefix || prefix === 'UNKNOWN') return `ORDER-${Date.now()}`;
+
+    let maxNum = 0;
+
+    const parseIdNumericPart = (idString: string) => {
+      if (!idString) return;
+      const idUpper = idString.toUpperCase().trim();
+      if (idUpper.startsWith(prefix)) {
+        // e.g. EVA00001 -> numeric part is 00001 -> 1
+        // e.g. EVA0002 -> numeric part is 0002 -> 2
+        const numPart = idUpper.substring(prefix.length);
+        const match = numPart.match(/^\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    };
+
+    // 1. Scan sheet records (orderId)
+    records.forEach(r => parseIdNumericPart(r.orderId));
+
+    // 2. Scan saved local orders (id)
+    savedOrders.forEach(o => parseIdNumericPart(o.id));
+
+    const nextNum = maxNum + 1;
+    // Format: name of user & standard 5-digit padded number starting with 00001
+    return `${prefix}${String(nextNum).padStart(5, '0')}`;
+  };
+
+  const handleKeyInOrders = async (): Promise<boolean> => {
+    const activeRole = localStorage.getItem('ws_selected_role');
+    if (!activeRole) return false;
+
+    const ordersToKeyIn = savedOrders.filter(
+      o => o.salesName === activeRole && !o.isHeld && !o.isKeyedIn
+    );
+
+    if (ordersToKeyIn.length === 0) return false;
+
+    setIsKeyingIn(true);
+    try {
+      const formatDateTime = (date: Date): string => {
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const min = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+      };
+
+      const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
+        const match = productName.match(/(\d+)\/([^\s\d/]+)/);
+        if (match) {
+          const outerQty = parseInt(match[1], 10);
+          const outerUnit = match[2];
+          if (!isNaN(outerQty) && outerQty > 0) {
+            return { outerQty, outerUnit };
+          }
+        }
+        return null;
+      };
+
+      const sentTime = formatDateTime(new Date());
+      const rowsToSend: any[][] = [];
+
+      ordersToKeyIn.forEach(order => {
+        order.items.forEach((item, index) => {
+          const remarkCol = index === 0 ? (order.remark || '') : '';
+          
+          const totalQty = item.quantity;
+          const parsed = parseProductPacking(item.name);
+          let colD_qty = totalQty;
+          let colE_unit = "unit";
+          let colF_ref = 1;
+
+          if (parsed) {
+            if (totalQty % parsed.outerQty === 0) {
+              colD_qty = totalQty / parsed.outerQty;
+              colE_unit = parsed.outerUnit;
+              colF_ref = parsed.outerQty;
+            }
+          }
+
+          const custObj = customers.find(c => c.name.trim() === order.customerName.trim());
+          const district = custObj?.district || "";
+          const subtotal = item.quantity * item.price;
+
+          rowsToSend.push([
+            sentTime,             // Col A: Date & time sent
+            item.name,            // Col B: Item (product name)
+            remarkCol,            // Col C: Out (order remark for first item only)
+            colD_qty,             // Col D: Quantity
+            colE_unit,            // Col E: Unit
+            colF_ref,             // Col F: Ref
+            item.price,           // Col G: Price
+            order.customerName,   // Col H: Customers name
+            district,             // Col I: district
+            subtotal,             // Col J: Subtotal
+            order.salesName,      // Col K: User name
+            "",                   // Col L: Empty placeholder/status
+            order.id              // Col M: Order ID
+          ]);
+        });
+      });
+
+      const success = await writeTradeLogToSheet(rowsToSend);
+      if (success) {
+        setSavedOrders(prev => prev.map(o => {
+          const shouldMark = ordersToKeyIn.some(toKey => toKey.id === o.id);
+          return shouldMark ? { ...o, isKeyedIn: true } : o;
+        }));
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Error auto keying in orders:', err);
+      return false;
+    } finally {
+      setIsKeyingIn(false);
+    }
+  };
+
 
   const loadData = useCallback(async (customId?: string) => {
     setLoading(true);
@@ -192,6 +308,7 @@ const App: React.FC = () => {
         onSaveOrder={handleSaveOrder} 
         onShowOrderList={() => { setActiveTab('saved_orders'); setEditingOrder(null); }}
         editingOrder={editingOrder}
+        onGenerateOrderId={generateNextOrderId}
       />
     );
   }
@@ -344,6 +461,8 @@ const App: React.FC = () => {
               onToggleHold={handleToggleHold}
               currentRole={localStorage.getItem('ws_selected_role')}
               onNewOrder={() => { setEditingOrder(null); setActiveTab('order'); }}
+              onKeyInOrders={handleKeyInOrders}
+              isKeyingIn={isKeyingIn}
             />
           ) : (
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">

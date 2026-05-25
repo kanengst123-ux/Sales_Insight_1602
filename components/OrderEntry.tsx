@@ -10,9 +10,10 @@ interface OrderEntryProps {
   onSaveOrder?: (order: SavedOrder) => void;
   onShowOrderList?: () => void;
   editingOrder?: SavedOrder | null;
+  onGenerateOrderId?: (userName: string) => string;
 }
 
-const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder }) => {
+const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder, onGenerateOrderId }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
     return localStorage.getItem('ws_selected_role');
@@ -56,6 +57,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerDistrict, setNewCustomerDistrict] = useState('九龍東');
+  const [newCustomerGrade, setNewCustomerGrade] = useState<'A' | 'B' | 'C'>('C');
   const [newProductName, setNewProductName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -182,15 +185,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     if (!selectedCustomer || selectedItems.length === 0) return;
     
     const totalAmount = selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    const activeUserName = selectedRole || 'Unknown';
+    const computedId = editingOrder?.id || onGenerateOrderId?.(activeUserName) || `${Date.now()}`;
     
     const order: SavedOrder = {
-      id: editingOrder?.id || `${Date.now()}`,
+      id: computedId,
       date: editingOrder?.date || new Date().toISOString(),
       customerName: selectedCustomer,
       orderAmount: totalAmount,
-      salesName: selectedRole || 'Unknown',
+      salesName: activeUserName,
       remark: remark,
-      items: selectedItems
+      items: selectedItems,
+      isKeyedIn: false
     };
     
     onSaveOrder?.(order);
@@ -204,19 +210,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     if (!newCustomerName.trim() || !selectedRole) return;
     setIsSubmitting(true);
     try {
-      const result = await addCustomerToSheet(newCustomerName.trim(), selectedRole);
-      if (result.success) {
-        // Calculate row number: use returned row from API if present, or fallback to customers.length + 2
-        const rowNumber = result.row || (customers.length + 2);
-        
+      const success = await addCustomerToSheet(newCustomerName.trim(), selectedRole, newCustomerDistrict, newCustomerGrade);
+      if (success) {
         // Refresh customer list
         const customerData = await fetchCustomerGrades();
         setCustomers(customerData);
         setNewCustomerName('');
         setShowAddCustomerModal(false);
-        alert(`客戶屬添加成功！\n客戶清單之最後行號為：第 ${rowNumber} 行`);
-      } else {
-        alert('添加客戶失敗，請重試。');
+        alert('客戶已成功添加！');
       }
     } catch (error) {
       console.error('Failed to add customer:', error);
@@ -230,7 +231,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     if (!newProductName.trim()) return;
     setIsSubmitting(true);
     try {
-      const success = await addProductToSheet(newProductName.trim());
+      const activeUser = selectedRole || 'Unknown';
+      const success = await addProductToSheet(newProductName.trim(), activeUser);
       if (success) {
         // Refresh product list
         const productData = await fetchProducts();
@@ -319,6 +321,46 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                     onChange={(e) => setNewCustomerName(e.target.value)}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-bold"
                   />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">District / 區域</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {districts.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setNewCustomerDistrict(d)}
+                        className={`py-2 px-1 rounded-xl text-xs font-black transition-all border ${
+                          newCustomerDistrict === d
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/10'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Customer Grade / 客戶級別 (Col C)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['A', 'B', 'C'] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setNewCustomerGrade(g)}
+                        className={`py-2 px-1 rounded-xl text-xs font-black transition-all border ${
+                          newCustomerGrade === g
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/10'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {g} 級
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-2">
@@ -784,7 +826,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
               />
             </div>
             <button
-              onClick={() => setShowAddCustomerModal(true)}
+              onClick={() => {
+                setNewCustomerDistrict(selectedDistrict || '九龍東');
+                setNewCustomerGrade('C');
+                setNewCustomerName('');
+                setShowAddCustomerModal(true);
+              }}
               className="p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
               title="Add New Customer"
             >
@@ -863,12 +910,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
-      
-      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-white/5 border border-white/10 px-4 py-2.5 rounded-2xl flex items-center gap-2.5 backdrop-blur-md z-20 shadow-lg">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">客戶總數 / Total Customers</span>
-        <span className="text-emerald-400 font-mono font-black text-sm">{loading ? '...' : customers.length}</span>
-      </div>
       
       <div className="relative z-10 w-full max-w-sm px-2 sm:px-0">
         <button 

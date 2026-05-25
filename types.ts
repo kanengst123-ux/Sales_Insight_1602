@@ -93,4 +93,5 @@ export interface SavedOrder {
   remark: string;
   items: OrderItem[];
   isHeld?: boolean;
+  isKeyedIn?: boolean;
 }
