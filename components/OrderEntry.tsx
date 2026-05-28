@@ -561,7 +561,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-40 sm:pb-36 md:pb-28 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
@@ -734,7 +734,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-40 sm:pb-36 md:pb-28 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
@@ -785,7 +785,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
           </div>
 
           {/* Floating Bottom Tab Switcher (Slide Bar) */}
-          <div className="absolute bottom-4 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
+          <div className="absolute bottom-24 md:bottom-12 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
             <div className="w-full max-w-[280px] bg-white/90 backdrop-blur-md border border-slate-100 rounded-2xl shadow-xl shadow-slate-200/40 p-1 flex items-center relative pointer-events-auto">
               {/* Sliding highlight background */}
               <div className="absolute inset-y-1 left-1 bottom-1 top-1 pointer-events-none" style={{ width: 'calc(50% - 4px)' }}>
