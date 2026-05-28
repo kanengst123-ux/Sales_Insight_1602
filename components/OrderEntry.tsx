@@ -11,16 +11,23 @@ interface OrderEntryProps {
   onShowOrderList?: () => void;
   editingOrder?: SavedOrder | null;
   onGenerateOrderId?: (userName: string) => string;
+  initialCustomers?: Customer[];
 }
 
-const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder, onGenerateOrderId }) => {
+const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder, onGenerateOrderId, initialCustomers }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
     return localStorage.getItem('ws_selected_role');
   });
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers || []);
+
+  useEffect(() => {
+    if (initialCustomers && initialCustomers.length > 0) {
+      setCustomers(initialCustomers);
+    }
+  }, [initialCustomers]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
   const [remark, setRemark] = useState(editingOrder?.remark || '');
@@ -48,7 +55,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   }, [selectedRole]);
 
   const [activeTab, setActiveTab] = useState<'order' | 'favorites'>('order');
-  const [loading, setLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -85,18 +92,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   useEffect(() => {
     const loadData = async () => {
-      setLoading(true);
+      setProductsLoading(true);
       try {
-        const [customerData, productData] = await Promise.all([
-          fetchCustomerGrades(),
-          fetchProducts()
-        ]);
-        setCustomers(customerData);
+        const productData = await fetchProducts();
         setProducts(productData);
       } catch (e) {
         console.error('Failed to load data', e);
       } finally {
-        setLoading(false);
+        setProductsLoading(false);
       }
     };
     loadData();
@@ -507,7 +510,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 }}
                 className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-[50vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5"
               >
-                {loading ? (
+                {productsLoading ? (
                   <div className="p-4 text-center text-slate-300">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                     <p className="text-[10px] font-black uppercase tracking-widest">Searching...</p>
@@ -550,27 +553,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
         {/* Scrollable Content: Selected Products or Favorites */}
         <div className="flex-1 overflow-hidden bg-slate-50/30 flex flex-col relative">
-          <div className="flex px-2 sm:px-4 pt-2 gap-4">
-            <button 
-              onClick={() => setActiveTab('order')}
-              className={`text-[9px] font-black uppercase tracking-[0.2em] pb-1 transition-colors relative ${
-                activeTab === 'order' ? 'text-blue-600' : 'text-slate-300'
-              }`}
-            >
-              Order
-              {activeTab === 'order' && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />}
-            </button>
-            <button 
-              onClick={() => setActiveTab('favorites')}
-              className={`text-[9px] font-black uppercase tracking-[0.2em] pb-1 transition-colors relative ${
-                activeTab === 'favorites' ? 'text-blue-600' : 'text-slate-300'
-              }`}
-            >
-              Favorites
-              {activeTab === 'favorites' && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />}
-            </button>
-          </div>
-
           <div className="flex-1 relative overflow-hidden">
             <AnimatePresence mode="wait">
               {activeTab === 'order' ? (
@@ -579,7 +561,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
@@ -752,7 +734,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 py-3 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
@@ -800,6 +782,47 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
+
+          {/* Floating Bottom Tab Switcher (Slide Bar) */}
+          <div className="absolute bottom-4 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
+            <div className="w-full max-w-[280px] bg-white/90 backdrop-blur-md border border-slate-100 rounded-2xl shadow-xl shadow-slate-200/40 p-1 flex items-center relative pointer-events-auto">
+              {/* Sliding highlight background */}
+              <div className="absolute inset-y-1 left-1 bottom-1 top-1 pointer-events-none" style={{ width: 'calc(50% - 4px)' }}>
+                <motion.div
+                  layoutId="bottom-tab-highlight"
+                  className="h-full bg-blue-600 rounded-xl shadow-md shadow-blue-600/10"
+                  animate={{
+                    translateX: activeTab === 'order' ? '0%' : '100%',
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              </div>
+
+              {/* Order Button */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('order')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider relative z-10 transition-colors duration-300 ${
+                  activeTab === 'order' ? 'text-white' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                Order ({selectedItems.length})
+              </button>
+
+              {/* Favorites Button */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('favorites')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider relative z-10 transition-colors duration-300 ${
+                  activeTab === 'favorites' ? 'text-white' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <Star className="w-3.5 h-3.5" />
+                Favorites ({favorites.length})
+              </button>
+            </div>
           </div>
         </div>
         {renderModals()}
@@ -887,12 +910,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
             }}
             className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20"
           >
-            {loading ? (
-              <div className="col-span-2 flex flex-col items-center justify-center p-20 text-slate-300">
-                <Loader2 className="w-8 h-8 animate-spin mb-4" />
-                <p className="text-[10px] font-black uppercase tracking-widest">Fetching Customer List...</p>
-              </div>
-            ) : filteredCustomers.length === 0 ? (
+            {filteredCustomers.length === 0 ? (
               <div className="col-span-2 p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">
                 <ShoppingCart className="w-8 h-8 text-slate-200 mx-auto mb-3" />
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">沒有找到匹配的客戶</p>

@@ -325,6 +325,7 @@ const App: React.FC = () => {
         onShowOrderList={() => { setActiveTab('saved_orders'); setEditingOrder(null); }}
         editingOrder={editingOrder}
         onGenerateOrderId={generateNextOrderId}
+        initialCustomers={customers}
       />
     );
   }
