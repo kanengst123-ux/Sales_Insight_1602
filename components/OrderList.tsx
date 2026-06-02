@@ -25,6 +25,7 @@ const OrderList: React.FC<OrderListProps> = ({
   isKeyingIn = false
 }) => {
   const [activeMenuOrder, setActiveMenuOrder] = useState<SavedOrder | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const startLongPress = useCallback((order: SavedOrder) => {
@@ -46,12 +47,14 @@ const OrderList: React.FC<OrderListProps> = ({
         </div>
         <div>
           <h3 className="text-2xl font-black text-slate-800">
-            {currentRole ? `${currentRole} 的訂單` : '暫無訂單記錄'}
+            {currentRole === 'Admin' ? '所有用戶的訂單' : (currentRole ? `${currentRole} 的訂單` : '暫無訂單記錄')}
           </h3>
           <p className="text-slate-500 mt-2 max-w-md font-medium">
-            {currentRole 
-              ? `目前在此賬號下沒有訂單記錄。在「落單」頁面完成訂單後會顯示在此處。`
-              : '您還沒有儲存任何訂單。在「落單」頁面完成訂單後會顯示在此處。'}
+            {currentRole === 'Admin'
+              ? '目前所有用戶都沒有儲存任何訂單記錄。'
+              : (currentRole 
+                  ? `目前在此賬號下沒有訂單記錄。在「落單」頁面完成訂單後會顯示在此處。`
+                  : '您還沒有儲存任何訂單。在「落單」頁面完成訂單後會顯示在此處。')}
           </p>
         </div>
         {currentRole && (
@@ -78,7 +81,9 @@ const OrderList: React.FC<OrderListProps> = ({
         <div className="px-4 sm:px-8 py-4 bg-slate-50/30 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">目前顯示 {currentRole} 的訂單</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              {currentRole === 'Admin' ? '目前顯示所有用戶的訂單' : `目前顯示 ${currentRole} 的訂單`}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{orders.length} 份訂單</span>
@@ -87,7 +92,21 @@ const OrderList: React.FC<OrderListProps> = ({
                 disabled={isKeyingIn || orders.filter(o => !o.isHeld && !o.isKeyedIn).length === 0}
                 onClick={async (e) => {
                   e.stopPropagation();
-                  await onKeyInOrders();
+                  setStatusMessage(null);
+                  const success = await onKeyInOrders();
+                  if (success) {
+                    setStatusMessage({
+                      text: "🎉 入機成功！數量已成功在 Google 表格「raw」工作表的 Col AC（Stock）中更新。",
+                      type: 'success'
+                    });
+                    setTimeout(() => setStatusMessage(null), 8000);
+                  } else {
+                    setStatusMessage({
+                      text: "❌ 入機失敗，請確認您的網絡連接，或稍後再試。",
+                      type: 'error'
+                    });
+                    setTimeout(() => setStatusMessage(null), 8000);
+                  }
                 }}
                 className={`px-4 py-1.5 rounded-xl font-bold text-xs select-none shadow-sm transition-all focus:outline-none flex items-center gap-1.5
                   ${orders.filter(o => !o.isHeld && !o.isKeyedIn).length === 0 
@@ -111,6 +130,30 @@ const OrderList: React.FC<OrderListProps> = ({
             )}
           </div>
         </div>
+        <AnimatePresence>
+          {statusMessage && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className={`px-4 sm:px-8 py-3.5 text-xs font-bold border-b flex items-center justify-between gap-4 overflow-hidden
+                ${statusMessage.type === 'success' 
+                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' 
+                  : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-semibold leading-relaxed">{statusMessage.text}</span>
+              </div>
+              <button 
+                onClick={() => setStatusMessage(null)}
+                className="p-1 hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 rounded-lg transition-colors shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm border-collapse">
           <thead className="bg-slate-50/50 border-b border-slate-100">
@@ -149,6 +192,11 @@ const OrderList: React.FC<OrderListProps> = ({
                       {order.id && (
                         <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold tracking-wider tabular-nums shrink-0 leading-none">
                           {order.id}
+                        </span>
+                      )}
+                      {currentRole === 'Admin' && order.salesName && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-blue-50 text-blue-600 border border-blue-200 font-bold uppercase tracking-wider shrink-0 leading-none">
+                          Sales: {order.salesName}
                         </span>
                       )}
                       {order.isHeld && (

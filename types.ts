@@ -65,6 +65,8 @@ export interface Product {
     B: number;
     C: number;
   };
+  unlimitedStock?: boolean;
+  stock?: number;
 }
 
 export interface Customer {

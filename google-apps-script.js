@@ -71,6 +71,95 @@ function doPost(e) {
         sheet.insertColumnsAfter(maxCols, neededCols - maxCols);
       }
       
+      // Update stock quantities in the 'raw' sheet, Col AC
+      try {
+        var rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
+        if (!rawSheet) {
+          rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+        }
+        if (rawSheet) {
+          var rawValues = rawSheet.getDataRange().getValues();
+          var rawHeaderRowIdx = 0;
+          var rawTitleIdx = 2; // Col C default
+          var rawUnlimitedIdx = 27; // Col AB default
+          var rawStockIdx = 28; // Col AC default
+          
+          for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
+            var row = rawValues[i];
+            var foundIdx = -1;
+            for (var j = 0; j < row.length; j++) {
+              if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+                foundIdx = j;
+                break;
+              }
+            }
+            if (foundIdx !== -1) {
+              rawHeaderRowIdx = i;
+              rawTitleIdx = foundIdx;
+              for (var j = 0; j < row.length; j++) {
+                var cellStr = (row[j] || '').toString().toLowerCase().trim();
+                var normed = cellStr.replace(/[\s_-]/g, '');
+                if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
+                else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
+              }
+              break;
+            }
+          }
+
+          // Create index of product name to row index
+          var prodToIndex = {};
+          for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
+            var pName = rawValues[rIdx][rawTitleIdx];
+            if (pName && pName.toString().trim()) {
+              prodToIndex[pName.toString().trim()] = rIdx;
+            }
+          }
+
+          // Apply subtractions
+          for (var i = 0; i < rows.length; i++) {
+            var incomingRow = rows[i];
+            if (incomingRow.length < 6) continue;
+            var incomingProdName = (incomingRow[1] || '').toString().trim();
+            var colD = incomingRow[3];
+            var colF = incomingRow[5];
+            
+            var soldQty = 0;
+            if (colD !== undefined && colF !== undefined) {
+              var parseVal = function(v) {
+                if (v === undefined || v === null || v === '') return 0;
+                if (typeof v === 'number') return v;
+                var parsed = parseFloat(v.toString().replace(/[$,\s]/g, ''));
+                return isNaN(parsed) ? 0 : parsed;
+              };
+              soldQty = parseVal(colD) * parseVal(colF);
+            }
+
+            if (incomingProdName && soldQty > 0) {
+              var targetIndex = prodToIndex[incomingProdName];
+              if (targetIndex !== undefined) {
+                var rawRow = rawValues[targetIndex];
+                var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
+                if (!isUnlimited) {
+                  var currentStockStr = rawRow[rawStockIdx];
+                  var currentStock = 0;
+                  if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
+                    var parsedStock = parseFloat(currentStockStr.toString().replace(/[$,\s]/g, ''));
+                    if (!isNaN(parsedStock)) {
+                      currentStock = parsedStock;
+                    }
+                  }
+                  var newStock = currentStock - soldQty;
+                  rawValues[targetIndex][rawStockIdx] = newStock;
+                  rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
+                }
+              }
+            }
+          }
+        }
+      } catch (stockError) {
+        console.error('Error updating stock in raw sheet:', stockError);
+      }
+      
       // Gather all unique Order IDs from Column M of the incoming rows (Index 12)
       var incomingIds = {};
       for (var i = 0; i < rows.length; i++) {
@@ -254,6 +343,8 @@ function doGet(e) {
       var basicIdx = 19; // Col T
       var priceIdx = 14; // Col O
       var discountedPriceIdx = 15; // Col P
+      var unlimitedIdx = 27; // Col AB
+      var stockIdx = 28; // Col AC
       
       // Attempt to locate title row and other index headers dynamically
       for (var i = 0; i < Math.min(values.length, 10); i++) {
@@ -270,12 +361,15 @@ function doGet(e) {
           titleIdx = foundIdx;
           
           for (var j = 0; j < row.length; j++) {
-            var cellStr = (row[j] || '').toString().toLowerCase();
+            var cellStr = (row[j] || '').toString().toLowerCase().trim();
+            var normed = cellStr.replace(/[\s_-]/g, '');
             if (cellStr.indexOf('gold') !== -1) goldIdx = j;
             else if (cellStr.indexOf('silver') !== -1) silverIdx = j;
             else if (cellStr.indexOf('basic') !== -1) basicIdx = j;
-            else if (cellStr === 'price') priceIdx = j;
-            else if (cellStr === 'discounted price') discountedPriceIdx = j;
+            else if (normed === 'price') priceIdx = j;
+            else if (normed === 'discountedprice') discountedPriceIdx = j;
+            else if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
+            else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) stockIdx = j;
           }
           break;
         }
@@ -310,13 +404,20 @@ function doGet(e) {
             
             if (!productsMap[trimmed]) {
               productsMap[trimmed] = true;
+              var isUnlimited = row[unlimitedIdx] !== undefined && row[unlimitedIdx] !== null && row[unlimitedIdx].toString().trim() === '1';
+              var stockVal = undefined;
+              if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
+                stockVal = parseNum(row[stockIdx]);
+              }
               productsList.push({
                 name: trimmed,
                 prices: {
                   A: getPrice(goldIdx),
                   B: getPrice(silverIdx),
                   C: getPrice(basicIdx)
-                }
+                },
+                unlimitedStock: isUnlimited,
+                stock: stockVal
               });
             }
           }

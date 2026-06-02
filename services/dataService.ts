@@ -286,6 +286,58 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 };
 
 export const fetchProducts = async (customId?: string): Promise<Product[]> => {
+  const csvProductsMap = new Map<string, { unlimitedStock: boolean; stock?: number }>();
+  
+  // Always load from the published CSV tab first to extract precise stock quantities
+  try {
+    const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
+    const response = await fetch(MASTER_URL + `&t=${Date.now()}`);
+    if (response.ok) {
+      const text = await response.text();
+      const rows = parseCSV(text);
+      if (rows.length > 0) {
+        let headerRowIdx = 0;
+        let titleIdx = 2; // Col C is Title
+        let unlimitedStockIdx = 27; // Col AB
+        let stockIdx = 28; // Col AC
+        
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
+          if (idx !== -1) {
+            headerRowIdx = i;
+            titleIdx = idx;
+            const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
+            if (uIdx !== -1) unlimitedStockIdx = uIdx;
+            const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
+            if (stIdx !== -1) stockIdx = stIdx;
+            break;
+          }
+        }
+        
+        rows.slice(headerRowIdx + 1).forEach(row => {
+          const productName = row[titleIdx];
+          if (productName && productName.trim()) {
+            const trimmed = productName.trim();
+            if (trimmed.toLowerCase() === 'title') return;
+            
+            const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+            let stockVal: number | undefined = undefined;
+            if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
+              stockVal = parseNum(row[stockIdx]);
+            }
+            
+            csvProductsMap.set(trimmed, {
+              unlimitedStock: isUnlimited,
+              stock: stockVal
+            });
+          }
+        });
+      }
+    }
+  } catch (csvError) {
+    console.error('Error fetching/parsing CSV fallback for stocks:', csvError);
+  }
+
   try {
     // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
     if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
@@ -295,7 +347,16 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         const json = await res.json();
         if (Array.isArray(json)) {
           console.log('Successfully fetched live product list, count:', json.length);
-          return json.sort((a, b) => a.name.localeCompare(b.name));
+          // Enrich GAS products with stock information from published CSV tab if missing/undefined
+          const enriched: Product[] = json.map((p: any) => {
+            const csvData = csvProductsMap.get(p.name);
+            return {
+              ...p,
+              unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
+              stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined)
+            };
+          });
+          return enriched.sort((a, b) => a.name.localeCompare(b.name));
         }
       }
     }
@@ -321,6 +382,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     let basicIdx = 19; // Col T
     let priceIdx = 14; // Col O
     let discountedPriceIdx = 15; // Col P
+    let unlimitedStockIdx = 27; // Col AB (default index 27)
+    let stockIdx = 28; // Col AC (default index 28)
     
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
       const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
@@ -338,6 +401,10 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         if (pIdx !== -1) priceIdx = pIdx;
         const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
         if (dpIdx !== -1) discountedPriceIdx = dpIdx;
+        const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
+        if (uIdx !== -1) unlimitedStockIdx = uIdx;
+        const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
+        if (stIdx !== -1) stockIdx = stIdx;
         break;
       }
     }
@@ -360,6 +427,12 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           return parseNum(row[priceIdx]);
         };
 
+        const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+        let stockVal: number | undefined = undefined;
+        if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
+          stockVal = parseNum(row[stockIdx]);
+        }
+
         // Filter out very short or numeric-only strings if they aren't products
         if (trimmed.length > 1) {
           if (!productMap.has(trimmed)) {
@@ -369,7 +442,9 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
                 A: getPrice(goldIdx),
                 B: getPrice(silverIdx),
                 C: getPrice(basicIdx)
-              }
+              },
+              unlimitedStock: isUnlimited,
+              stock: stockVal
             });
           }
         }

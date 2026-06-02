@@ -12,9 +12,20 @@ interface OrderEntryProps {
   editingOrder?: SavedOrder | null;
   onGenerateOrderId?: (userName: string) => string;
   initialCustomers?: Customer[];
+  initialProducts?: Product[];
+  savedOrders?: SavedOrder[];
 }
 
-const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrderList, editingOrder, onGenerateOrderId, initialCustomers }) => {
+const OrderEntry: React.FC<OrderEntryProps> = ({ 
+  onBack, 
+  onSaveOrder, 
+  onShowOrderList, 
+  editingOrder, 
+  onGenerateOrderId, 
+  initialCustomers,
+  initialProducts,
+  savedOrders = []
+}) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
     return localStorage.getItem('ws_selected_role');
@@ -28,7 +39,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
       setCustomers(initialCustomers);
     }
   }, [initialCustomers]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(initialProducts || []);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
   const [remark, setRemark] = useState(editingOrder?.remark || '');
   const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
@@ -55,7 +66,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   }, [selectedRole]);
 
   const [activeTab, setActiveTab] = useState<'order' | 'favorites'>('order');
-  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(initialProducts && initialProducts.length > 0 ? false : true);
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -92,6 +103,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
 
   useEffect(() => {
     const loadData = async () => {
+      if (initialProducts && initialProducts.length > 0) {
+        setProducts(initialProducts);
+        setProductsLoading(false);
+        return;
+      }
       setProductsLoading(true);
       try {
         const productData = await fetchProducts();
@@ -103,7 +119,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
       }
     };
     loadData();
-  }, []);
+  }, [initialProducts]);
 
   // Save favorites to localStorage
   useEffect(() => {
@@ -142,17 +158,81 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
     return customers.find(c => c.name === selectedCustomer);
   }, [customers, selectedCustomer]);
 
+  const getRemainingStock = (product: Product) => {
+    if (product.unlimitedStock) return Infinity;
+    const baseStock = product.stock ?? 0;
+    
+    let reducedQty = 0;
+    if (savedOrders) {
+      savedOrders.forEach(order => {
+        if (order.isKeyedIn) {
+          return;
+        }
+        if (editingOrder && order.id === editingOrder.id) {
+          return;
+        }
+        order.items.forEach(item => {
+          if (item.name === product.name) {
+            reducedQty += item.quantity;
+          }
+        });
+      });
+    }
+
+    selectedItems.forEach(item => {
+      if (item.name === product.name) {
+        reducedQty += item.quantity;
+      }
+    });
+
+    return Math.max(0, baseStock - reducedQty);
+  };
+
+  const getProductStockLimit = (productName: string) => {
+    const prod = products.find(p => p.name === productName);
+    if (!prod) return Infinity;
+    if (prod.unlimitedStock) return Infinity;
+    
+    let reducedQty = 0;
+    if (savedOrders) {
+      savedOrders.forEach(order => {
+        if (order.isKeyedIn) {
+          return;
+        }
+        if (editingOrder && order.id === editingOrder.id) {
+          return;
+        }
+        order.items.forEach(item => {
+          if (item.name === productName) {
+            reducedQty += item.quantity;
+          }
+        });
+      });
+    }
+    return Math.max(0, (prod.stock ?? 0) - reducedQty);
+  };
+
   const handleAddProduct = (product: Product) => {
+    const remaining = getRemainingStock(product);
+    const isUnlimited = !!product.unlimitedStock;
+    if (!isUnlimited && remaining <= 0) {
+      alert('該產品已無庫存！');
+      return;
+    }
+
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
     const grade = selectedCustomerInfo?.grade || 'C';
     const tieredPrice = product.prices ? product.prices[grade] : (product.price || 0);
 
+    const defaultQty = boxInfo ? boxInfo.units : 12;
+    const qtyToAdd = isUnlimited ? defaultQty : Math.min(defaultQty, remaining);
+
     const newItem: OrderItem = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: product.name,
-      // Default to 1 outer (either parsed or fallback 12) per user request
-      quantity: boxInfo ? boxInfo.units : 12,
+      // Default to 1 outer (either parsed or fallback 12) per user request (capped by remaining stock)
+      quantity: qtyToAdd,
       price: tieredPrice,
       isOuterBox: true, // Start in outer mode
       unitsPerBox: boxInfo ? boxInfo.units : 12,
@@ -163,7 +243,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
   };
 
   const handleUpdateItem = (id: string, updates: Partial<OrderItem>) => {
-    setSelectedItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    setSelectedItems(prev => prev.map(item => {
+      if (item.id === id) {
+        const merged = { ...item, ...updates };
+        const limit = getProductStockLimit(item.name);
+        if (merged.quantity > limit) {
+          merged.quantity = limit;
+          alert(`庫存不足！該產品最大可用庫存爲 ${limit}`);
+        }
+        return merged;
+      }
+      return item;
+    }));
   };
 
   const handleRemoveItem = (id: string) => {
@@ -520,31 +611,49 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                     找不到產品
                   </div>
                 ) : (
-                  filteredProducts.map((p, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => handleAddProduct(p)}
-                      className="w-full flex items-center justify-between p-3 hover:bg-blue-50 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 flex-1 pr-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(p);
-                          }}
-                          className={`p-1 rounded-md transition-colors ${
-                            isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
-                          }`}
-                        >
-                          <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
-                        </button>
-                        <span className="text-[11px] font-bold text-slate-700 group-hover:text-blue-700 leading-snug break-words">{p.name}</span>
+                  filteredProducts.map((p, idx) => {
+                    const remaining = getRemainingStock(p);
+                    const isUnlimited = !!p.unlimitedStock;
+                    const isOutOfStock = !isUnlimited && remaining <= 0;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => !isOutOfStock && handleAddProduct(p)}
+                        className={`w-full flex items-center justify-between p-3 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer ${
+                          isOutOfStock ? 'opacity-50 hover:bg-transparent cursor-not-allowed' : 'hover:bg-blue-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(p);
+                            }}
+                            className={`p-1 rounded-md transition-colors ${
+                              isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
+                            }`}
+                          >
+                            <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
+                          </button>
+                          <div className="flex flex-col min-w-0">
+                            <span className={`text-[11px] font-bold leading-snug break-words ${
+                              isOutOfStock ? 'text-slate-400' : 'text-slate-700 group-hover:text-blue-700'
+                            }`}>{p.name}</span>
+                            <span className={`text-[9px] font-semibold mt-0.5 ${
+                              isOutOfStock ? 'text-red-500' : (remaining < 10 && !isUnlimited) ? 'text-amber-600' : 'text-slate-400'
+                            }`}>
+                              {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '庫存: 已售罄' : `剩餘庫存: ${remaining}`}
+                            </span>
+                          </div>
+                        </div>
+                        <div className={`p-1 rounded-lg transition-colors ${
+                          isOutOfStock ? 'bg-slate-50' : 'bg-slate-100 group-hover:bg-blue-100'
+                        }`}>
+                          <Plus className={`w-3 h-3 ${isOutOfStock ? 'text-slate-200' : 'text-slate-400 group-hover:text-blue-500'}`} />
+                        </div>
                       </div>
-                      <div className="bg-slate-100 p-1 rounded-lg group-hover:bg-blue-100 transition-colors">
-                        <Plus className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -763,14 +872,27 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                                >
                                  <Star className="w-3.5 h-3.5 fill-current" />
                                </button>
-                               <span className="text-[11px] font-bold text-slate-700 leading-snug truncate">{p.name}</span>
+                               <div className="flex flex-col min-w-0 align-left text-left">
+                                 <span className={`text-[11px] font-bold leading-snug truncate ${
+                                   (!p.unlimitedStock && getRemainingStock(p) <= 0) ? 'text-slate-400' : 'text-slate-700'
+                                 }`}>{p.name}</span>
+                                 <span className={`text-[9px] font-semibold mt-0.5 ${
+                                   (!p.unlimitedStock && getRemainingStock(p) <= 0) 
+                                     ? 'text-red-500' 
+                                     : getRemainingStock(p) < 10 && !p.unlimitedStock 
+                                       ? 'text-amber-600' 
+                                       : 'text-slate-400'
+                                 }`}>
+                                   {p.unlimitedStock ? '庫存: 無限制' : getRemainingStock(p) <= 0 ? '庫存: 已售罄' : `剩餘庫存: ${getRemainingStock(p)}`}
+                                 </span>
+                               </div>
                              </div>
                              <button
                                onClick={() => {
-                                 handleAddProduct(p);
+                                 if (!p.unlimitedStock && getRemainingStock(p) <= 0) { alert('該產品已無庫存！'); return; } handleAddProduct(p);
                                  setActiveTab('order');
                                }}
-                               className="bg-blue-600 text-white p-1.5 rounded-lg shadow-lg shadow-blue-600/20 active:scale-95 transition-all flex-shrink-0"
+                               className={`p-1.5 rounded-lg active:scale-95 transition-all flex-shrink-0 text-white ${(!p.unlimitedStock && getRemainingStock(p) <= 0) ? "bg-slate-100 text-slate-300 cursor-not-allowed shadow-none active:scale-100" : "bg-blue-600 shadow-lg shadow-blue-600/20"}`}
                              >
                                <Plus className="w-3 h-3" />
                              </button>
@@ -908,7 +1030,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({ onBack, onSaveOrder, onShowOrde
                 document.activeElement.blur();
               }
             }}
-            className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20"
+            className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20"
           >
             {filteredCustomers.length === 0 ? (
               <div className="col-span-2 p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">

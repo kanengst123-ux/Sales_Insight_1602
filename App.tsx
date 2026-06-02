@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet, deleteOrderFromSheet } from './services/dataService';
-import { SaleRecord, SalesAnalytics, SavedOrder, Customer } from './types';
+import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet, deleteOrderFromSheet, fetchProducts } from './services/dataService';
+import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [records, setRecords] = useState<SaleRecord[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +118,7 @@ const App: React.FC = () => {
     if (!activeRole) return false;
 
     const ordersToKeyIn = savedOrders.filter(
-      o => o.salesName === activeRole && !o.isHeld && !o.isKeyedIn
+      o => (activeRole === 'Admin' || o.salesName === activeRole) && !o.isHeld && !o.isKeyedIn
     );
 
     if (ordersToKeyIn.length === 0) return false;
@@ -211,9 +212,10 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [salesResult, customerResult] = await Promise.all([
+      const [salesResult, customerResult, productResult] = await Promise.all([
         fetchSalesData(customId),
-        fetchCustomerGrades()
+        fetchCustomerGrades(),
+        fetchProducts()
       ]);
 
       const { data, source } = salesResult;
@@ -224,6 +226,7 @@ const App: React.FC = () => {
         setRecords(data.records);
         setHeaders(data.headers);
         setCustomers(customerResult);
+        setProducts(productResult);
         setDataSource(source);
         const calculated = calculateAnalytics(data.records);
         setAnalytics(calculated);
@@ -326,6 +329,8 @@ const App: React.FC = () => {
         editingOrder={editingOrder}
         onGenerateOrderId={generateNextOrderId}
         initialCustomers={customers}
+        initialProducts={products}
+        savedOrders={savedOrders}
       />
     );
   }
@@ -472,7 +477,11 @@ const App: React.FC = () => {
             <PivotTable data={records} headers={headers} />
           ) : activeTab === 'saved_orders' ? (
             <OrderList 
-              orders={savedOrders.filter(o => o.salesName === localStorage.getItem('ws_selected_role'))} 
+              orders={
+                localStorage.getItem('ws_selected_role') === 'Admin'
+                  ? savedOrders
+                  : savedOrders.filter(o => o.salesName === localStorage.getItem('ws_selected_role'))
+              } 
               onEditOrder={handleEditOrder} 
               onDeleteOrder={handleDeleteOrder}
               onToggleHold={handleToggleHold}
