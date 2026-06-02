@@ -70,6 +70,21 @@ function doPost(e) {
       if (maxCols < neededCols) {
         sheet.insertColumnsAfter(maxCols, neededCols - maxCols);
       }
+
+      // Gather all unique Order IDs from Column M of the incoming rows (Index 12)
+      var incomingIds = {};
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (row.length >= 13) {
+          var orderId = row[12]; // Col M is index 12 (0-indexed)
+          if (orderId) {
+            incomingIds[orderId.toString().trim()] = true;
+          }
+        }
+      }
+
+      // Revert stock of previous matching rows in Trade_Log before applying new subtractions
+      revertStockForOrders(incomingIds);
       
       // Update stock quantities in the 'raw' sheet, Col AC
       try {
@@ -160,18 +175,6 @@ function doPost(e) {
         console.error('Error updating stock in raw sheet:', stockError);
       }
       
-      // Gather all unique Order IDs from Column M of the incoming rows (Index 12)
-      var incomingIds = {};
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        if (row.length >= 13) {
-          var orderId = row[12]; // Col M is index 12 (0-indexed)
-          if (orderId) {
-            incomingIds[orderId] = true;
-          }
-        }
-      }
-      
       // Delete existing rows with these matching order IDs in Column M (13th column)
       var uniqueIdsToDelete = Object.keys(incomingIds);
       if (uniqueIdsToDelete.length > 0) {
@@ -210,6 +213,11 @@ function doPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'No orderId provided' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
+
+      // Revert stock for this order ID before deletion from Trade_Log
+      var deleteMap = {};
+      deleteMap[orderId.toString().trim()] = true;
+      revertStockForOrders(deleteMap);
       
       // Ensure the sheet has enough columns to hold our 13-column wide schema
       var maxCols = sheet.getMaxColumns();
@@ -432,5 +440,100 @@ function doGet(e) {
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function revertStockForOrders(orderIdsMap) {
+  try {
+    var rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
+    if (!rawSheet) {
+      rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    }
+    var tradeLogSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Trade_Log');
+    if (rawSheet && tradeLogSheet) {
+      var rawValues = rawSheet.getDataRange().getValues();
+      var rawHeaderRowIdx = 0;
+      var rawTitleIdx = 2; // Col C default
+      var rawUnlimitedIdx = 27; // Col AB default
+      var rawStockIdx = 28; // Col AC default
+      
+      for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
+        var row = rawValues[i];
+        var foundIdx = -1;
+        for (var j = 0; j < row.length; j++) {
+          if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+            foundIdx = j;
+            break;
+          }
+        }
+        if (foundIdx !== -1) {
+          rawHeaderRowIdx = i;
+          rawTitleIdx = foundIdx;
+          for (var j = 0; j < row.length; j++) {
+            var cellStr = (row[j] || '').toString().toLowerCase().trim();
+            var normed = cellStr.replace(/[\s_-]/g, '');
+            if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
+            else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
+          }
+          break;
+        }
+      }
+
+      // Create index of product name to row index
+      var prodToIndex = {};
+      for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
+        var pName = rawValues[rIdx][rawTitleIdx];
+        if (pName && pName.toString().trim()) {
+          prodToIndex[pName.toString().trim()] = rIdx;
+        }
+      }
+
+      var lastRow = tradeLogSheet.getLastRow();
+      if (lastRow > 1) {
+        var tradeLogValues = tradeLogSheet.getRange(1, 1, lastRow, 13).getValues();
+        // Go through each row of Trade_Log and check if order ID matches (index 12 is M)
+        for (var r = 1; r < lastRow; r++) { // 1-indexed row index but tradeLogValues is 0-indexed
+          var logRow = tradeLogValues[r];
+          if (logRow.length < 13) continue;
+          var orderId = (logRow[12] || '').toString().trim();
+          if (orderId && orderIdsMap[orderId]) {
+            var prodName = (logRow[1] || '').toString().trim();
+            var colD = logRow[3];
+            var colF = logRow[5];
+            
+            var parseVal = function(v) {
+              if (v === undefined || v === null || v === '') return 0;
+              if (typeof v === 'number') return v;
+              var parsed = parseFloat(v.toString().replace(/[$,\s]/g, ''));
+              return isNaN(parsed) ? 0 : parsed;
+            };
+            var revertQty = parseVal(colD) * parseVal(colF);
+            
+            if (prodName && revertQty > 0) {
+              var targetIndex = prodToIndex[prodName];
+              if (targetIndex !== undefined) {
+                var rawRow = rawValues[targetIndex];
+                var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
+                if (!isUnlimited) {
+                  var currentStockStr = rawRow[rawStockIdx];
+                  var currentStock = 0;
+                  if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
+                    var parsedStock = parseFloat(currentStockStr.toString().replace(/[$,\s]/g, ''));
+                    if (!isNaN(parsedStock)) {
+                      currentStock = parsedStock;
+                    }
+                  }
+                  var newStock = currentStock + revertQty;
+                  rawValues[targetIndex][rawStockIdx] = newStock;
+                  rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error in reverting stock:', err);
   }
 }
