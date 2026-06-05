@@ -29,6 +29,7 @@ const App: React.FC = () => {
     const stored = localStorage.getItem('榮昇_saved_orders');
     return stored ? JSON.parse(stored) : [];
   });
+  const [preSelectedCustomer, setPreSelectedCustomer] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
@@ -249,6 +250,13 @@ const App: React.FC = () => {
     }
   }, [loadData]);
 
+  const handleCustomerAdded = (customerName: string) => {
+    loadData();
+    setPreSelectedCustomer(customerName);
+    setActiveTab('order');
+    setEditingOrder(null);
+  };
+
   const NavItems = () => (
     <>
       <button
@@ -331,6 +339,9 @@ const App: React.FC = () => {
         initialCustomers={customers}
         initialProducts={products}
         savedOrders={savedOrders}
+        preSelectedCustomer={preSelectedCustomer}
+        onClearPreSelectedCustomer={() => setPreSelectedCustomer(null)}
+        onCustomerAdded={handleCustomerAdded}
       />
     );
   }
@@ -472,7 +483,7 @@ const App: React.FC = () => {
           ) : activeTab === 'inactive' ? (
             <InactiveCustomers data={records} masters={customers} />
           ) : activeTab === 'grades' ? (
-            <CustomerGrades />
+            <CustomerGrades onCustomerAdded={handleCustomerAdded} />
           ) : activeTab === 'pivot' ? (
             <PivotTable data={records} headers={headers} />
           ) : activeTab === 'saved_orders' ? (

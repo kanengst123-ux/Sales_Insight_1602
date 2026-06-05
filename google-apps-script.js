@@ -26,6 +26,36 @@ function doPost(e) {
       // Append row to 'raw' sheet:
       sheet.appendRow([new Date(), username, name, id]);
       
+      // Mark as unlimited stock
+      try {
+        var values = sheet.getDataRange().getValues();
+        var unlimitedIdx = 27; // Default Col AB (0-indexed 27)
+        for (var i = 0; i < Math.min(values.length, 10); i++) {
+          var row = values[i];
+          var foundIdx = -1;
+          for (var j = 0; j < row.length; j++) {
+            if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+              foundIdx = j;
+              break;
+            }
+          }
+          if (foundIdx !== -1) {
+            for (var j = 0; j < row.length; j++) {
+              var cellStr = (row[j] || '').toString().toLowerCase().trim();
+              if (cellStr.replace(/[\s_-]/g, '').indexOf('unlimitedstock') !== -1) {
+                unlimitedIdx = j;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        var lastRow = sheet.getLastRow();
+        sheet.getRange(lastRow, unlimitedIdx + 1).setValue(1);
+      } catch (err) {
+        console.error('Error marking as unlimited stock:', err);
+      }
+      
       return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Product added to raw tab' }))
         .setMimeType(ContentService.MimeType.JSON);
     }

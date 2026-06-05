@@ -14,6 +14,9 @@ interface OrderEntryProps {
   initialCustomers?: Customer[];
   initialProducts?: Product[];
   savedOrders?: SavedOrder[];
+  preSelectedCustomer?: string | null;
+  onClearPreSelectedCustomer?: () => void;
+  onCustomerAdded?: (name: string) => void;
 }
 
 const OrderEntry: React.FC<OrderEntryProps> = ({ 
@@ -24,14 +27,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   onGenerateOrderId, 
   initialCustomers,
   initialProducts,
-  savedOrders = []
+  savedOrders = [],
+  preSelectedCustomer = null,
+  onClearPreSelectedCustomer,
+  onCustomerAdded
 }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
     return localStorage.getItem('ws_selected_role');
   });
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || null);
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || preSelectedCustomer || null);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers || []);
 
   useEffect(() => {
@@ -39,6 +45,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       setCustomers(initialCustomers);
     }
   }, [initialCustomers]);
+
+  useEffect(() => {
+    if (preSelectedCustomer) {
+      setSelectedCustomer(preSelectedCustomer);
+      onClearPreSelectedCustomer?.();
+    }
+  }, [preSelectedCustomer, onClearPreSelectedCustomer]);
+
   const [products, setProducts] = useState<Product[]>(initialProducts || []);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
   const [remark, setRemark] = useState(editingOrder?.remark || '');
@@ -303,12 +317,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const handleAddCustomerConfirm = async () => {
     if (!newCustomerName.trim() || !selectedRole) return;
     setIsSubmitting(true);
+    const addedCustomerName = newCustomerName.trim();
     try {
-      const success = await addCustomerToSheet(newCustomerName.trim(), selectedRole, newCustomerDistrict, newCustomerGrade);
+      const success = await addCustomerToSheet(addedCustomerName, selectedRole, newCustomerDistrict, newCustomerGrade);
       if (success) {
         // Refresh customer list
         const customerData = await fetchCustomerGrades();
         setCustomers(customerData);
+        setSelectedCustomer(addedCustomerName);
+        if (onCustomerAdded) {
+          onCustomerAdded(addedCustomerName);
+        }
         setNewCustomerName('');
         setShowAddCustomerModal(false);
         alert('客戶已成功添加！');
