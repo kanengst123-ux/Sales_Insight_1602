@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { SaleRecord, PivotConfig, SortOrder, Product } from '../types';
 import { Filter, SortDesc, SortAsc, Search, Star, Package } from 'lucide-react';
 
@@ -51,6 +51,21 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers, products }) => {
       return next;
     });
   };
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (document.activeElement === searchInputRef.current) {
+        searchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll, { capture: true });
+    };
+  }, []);
 
   const filteredProducts = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -166,7 +181,7 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers, products }) => {
                 <Package className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Product Stock Explorer</h3>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">查詢存貨</h3>
                 <p className="text-xs text-slate-400">Search products to find active stock levels or pin them as favorites.</p>
               </div>
             </div>
@@ -177,11 +192,12 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers, products }) => {
                 <Search className="h-5 w-5 text-slate-400" />
               </div>
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Type Chinese or English product name..."
-                className="block w-full pl-11 pr-14 py-3 border border-slate-200 rounded-[1.25rem] bg-slate-50 text-slate-800 font-medium placeholder-slate-400 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-200"
+                className="block w-full pl-11 pr-14 py-3 border border-slate-200 rounded-[1.25rem] bg-slate-50 text-slate-800 font-medium placeholder-slate-450 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-200"
               />
               {searchQuery && (
                 <button

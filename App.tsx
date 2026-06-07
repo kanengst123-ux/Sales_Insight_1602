@@ -440,7 +440,7 @@ const App: React.FC = () => {
                   </span>
                 </div>
                 <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                  {activeTab === 'dashboard' ? 'Performance Hub' : 
+                  {activeTab === 'dashboard' ? '' : 
                    activeTab === 'pivot' ? '過往三十天銷售記錄' : 
                    activeTab === 'collections' ? '及單+未到期票' : 
                    activeTab === 'inactive' ? '7天以上冇落單' : 
