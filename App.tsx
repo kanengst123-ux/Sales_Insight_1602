@@ -485,7 +485,7 @@ const App: React.FC = () => {
           ) : activeTab === 'grades' ? (
             <CustomerGrades onCustomerAdded={handleCustomerAdded} />
           ) : activeTab === 'pivot' ? (
-            <PivotTable data={records} headers={headers} />
+            <PivotTable data={records} headers={headers} products={products} />
           ) : activeTab === 'saved_orders' ? (
             <OrderList 
               orders={
