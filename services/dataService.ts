@@ -286,7 +286,7 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 };
 
 export const fetchProducts = async (customId?: string): Promise<Product[]> => {
-  const csvProductsMap = new Map<string, { unlimitedStock: boolean; stock?: number }>();
+  const csvProductsMap = new Map<string, { id?: string; unlimitedStock: boolean; stock?: number }>();
   
   // Always load from the published CSV tab first to extract precise stock quantities
   try {
@@ -298,6 +298,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
       if (rows.length > 0) {
         let headerRowIdx = 0;
         let titleIdx = 2; // Col C is Title
+        let productIdIdx = 1; // Col B is Product ID
         let unlimitedStockIdx = 27; // Col AB
         let stockIdx = 28; // Col AC
         
@@ -306,6 +307,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           if (idx !== -1) {
             headerRowIdx = i;
             titleIdx = idx;
+            const pIdIdx = rows[i].findIndex(cell => {
+              const cellStr = (cell || '').toLowerCase().trim();
+              return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
+            });
+            if (pIdIdx !== -1) productIdIdx = pIdIdx;
             const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
             if (uIdx !== -1) unlimitedStockIdx = uIdx;
             const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
@@ -321,12 +327,14 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             if (trimmed.toLowerCase() === 'title') return;
             
             const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+            const prodId = row[productIdIdx]?.toString().trim() || '';
             let stockVal: number | undefined = undefined;
             if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
               stockVal = parseNum(row[stockIdx]);
             }
             
             csvProductsMap.set(trimmed, {
+              id: prodId,
               unlimitedStock: isUnlimited,
               stock: stockVal
             });
@@ -352,6 +360,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             const csvData = csvProductsMap.get(p.name);
             return {
               ...p,
+              id: p.id !== undefined ? p.id : (csvData ? csvData.id : undefined),
               unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined)
             };
@@ -377,6 +386,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     // Find the header row (usually 0, but scan just in case)
     let headerRowIdx = 0;
     let titleIdx = 2; // Col C is Title
+    let productIdIdx = 1; // Col B is Product ID
     let goldIdx = 17; // Col R
     let silverIdx = 18; // Col S
     let basicIdx = 19; // Col T
@@ -390,6 +400,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
       if (idx !== -1) {
         headerRowIdx = i;
         titleIdx = idx;
+        const pIdIdx = rows[i].findIndex(cell => {
+          const cellStr = (cell || '').toLowerCase().trim();
+          return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
+        });
+        if (pIdIdx !== -1) productIdIdx = pIdIdx;
         // Verify other indices based on actual headers if possible
         const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
         if (rIdx !== -1) goldIdx = rIdx;
@@ -428,6 +443,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         };
 
         const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+        const prodId = row[productIdIdx]?.toString().trim() || '';
         let stockVal: number | undefined = undefined;
         if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
           stockVal = parseNum(row[stockIdx]);
@@ -437,6 +453,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         if (trimmed.length > 1) {
           if (!productMap.has(trimmed)) {
             productMap.set(trimmed, {
+              id: prodId,
               name: trimmed,
               prices: {
                 A: getPrice(goldIdx),

@@ -173,10 +173,13 @@ const App: React.FC = () => {
           const district = custObj?.district || "";
           const subtotal = item.quantity * item.price;
 
+          const matchedProd = products.find(p => p.name.trim() === item.name.trim());
+          const productId = matchedProd?.id || "";
+
           rowsToSend.push([
             sentTime,             // Col A: Date & time sent
             item.name,            // Col B: Item (product name)
-            remarkCol,            // Col C: Out (order remark for first item only)
+            productId,            // Col C: Product ID (Col B of raw tab)
             colD_qty,             // Col D: Quantity
             colE_unit,            // Col E: Unit
             colF_ref,             // Col F: Ref
@@ -186,7 +189,8 @@ const App: React.FC = () => {
             subtotal,             // Col J: Subtotal
             order.salesName,      // Col K: User name
             "",                   // Col L: Empty placeholder/status
-            order.id              // Col M: Order ID
+            order.id,             // Col M: Order ID
+            remarkCol             // Col N: Remark (備註)
           ]);
         });
       });
