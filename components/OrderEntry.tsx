@@ -57,6 +57,25 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
   const [remark, setRemark] = useState(editingOrder?.remark || '');
   const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
+
+  const toggleRemarkKeyword = (keyword: string, checked: boolean) => {
+    if (checked) {
+      setRemark(prev => {
+        const trimmed = prev.trim();
+        if (trimmed.includes(keyword)) return prev;
+        return trimmed ? `${trimmed} ${keyword}` : keyword;
+      });
+    } else {
+      setRemark(prev => {
+        // Build regex that safely removes the keyword and normalizes spacing around it
+        const escaped = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(`\\s*${escaped}\\s*`, 'g');
+        const updated = prev.replace(regex, ' ').trim();
+        return updated;
+      });
+    }
+  };
+
   const [favorites, setFavorites] = useState<Product[]>([]);
 
   // Load favorites when role changes or on mount
@@ -520,7 +539,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   <PackagePlus className="w-6 h-6 text-emerald-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900">Add New Product</h3>
+                  <h3 className="text-lg font-black text-slate-900">登記新貨品</h3>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adding to raw (Col C)</p>
                 </div>
               </div>
@@ -580,7 +599,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="搜尋產品 (Col C)..."
+                placeholder="落單"
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
@@ -589,7 +608,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             <button
               onClick={() => setShowAddProductModal(true)}
               className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
-              title="Add New Product"
+              title="登記新貨品"
             >
               <PackagePlus className="w-4 h-4" />
             </button>
@@ -711,7 +730,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
                           <button 
                             onClick={() => setShowRemarkInput(!showRemarkInput)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border ${
@@ -723,6 +742,50 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                             <Check className={`w-3 h-3 ${remark ? 'block' : 'hidden'}`} />
                             {remark ? '已添加備註' : '+ 備註'}
                           </button>
+
+                          {/* Quick Select Remark Checkboxes next to the button */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg max-w-full">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                              <input
+                                type="checkbox"
+                                checked={remark.includes('收及單')}
+                                onChange={(e) => toggleRemarkKeyword('收及單', e.target.checked)}
+                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                              />
+                              收及單
+                            </label>
+                            <div className="h-3 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                              <input
+                                type="checkbox"
+                                checked={remark.includes('明天送')}
+                                onChange={(e) => toggleRemarkKeyword('明天送', e.target.checked)}
+                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                              />
+                              明天送
+                            </label>
+                            <div className="h-3 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                              <input
+                                type="checkbox"
+                                checked={remark.includes('COD')}
+                                onChange={(e) => toggleRemarkKeyword('COD', e.target.checked)}
+                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                              />
+                              COD
+                            </label>
+                            <div className="h-3 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                              <input
+                                type="checkbox"
+                                checked={remark.includes('原板落, 不搬')}
+                                onChange={(e) => toggleRemarkKeyword('原板落, 不搬', e.target.checked)}
+                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                              />
+                              原板落, 不搬
+                            </label>
+                          </div>
+
                           {remark && (
                             <button onClick={() => setRemark('')} className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
                           )}

@@ -492,11 +492,7 @@ const App: React.FC = () => {
             <PivotTable data={records} headers={headers} products={products} />
           ) : activeTab === 'saved_orders' ? (
             <OrderList 
-              orders={
-                localStorage.getItem('ws_selected_role') === 'Admin'
-                  ? savedOrders
-                  : savedOrders.filter(o => o.salesName === localStorage.getItem('ws_selected_role'))
-              } 
+              orders={savedOrders} 
               onEditOrder={handleEditOrder} 
               onDeleteOrder={handleDeleteOrder}
               onToggleHold={handleToggleHold}

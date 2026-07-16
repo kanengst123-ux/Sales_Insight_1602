@@ -28,6 +28,16 @@ const OrderList: React.FC<OrderListProps> = ({
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const [showAll, setShowAll] = useState(currentRole === 'Admin' || !currentRole);
+
+  const displayedOrders = (showAll || !currentRole)
+    ? orders
+    : orders.filter(o => o.salesName === currentRole);
+
+  const keyInCount = orders.filter(
+    o => (currentRole === 'Admin' || o.salesName === currentRole) && !o.isHeld && !o.isKeyedIn
+  ).length;
+
   const startLongPress = useCallback((order: SavedOrder) => {
     longPressTimer.current = setTimeout(() => {
       setActiveMenuOrder(order);
@@ -79,17 +89,28 @@ const OrderList: React.FC<OrderListProps> = ({
     <div className="relative">
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="px-4 sm:px-8 py-4 bg-slate-50/30 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-              {currentRole === 'Admin' ? '目前顯示所有用戶的訂單' : `目前顯示 ${currentRole} 的訂單`}
-            </span>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                {showAll ? '目前顯示所有用戶的訂單' : `目前顯示 ${currentRole} 的訂單`}
+              </span>
+            </div>
+            {currentRole && currentRole !== 'Admin' && (
+              <button
+                onClick={() => setShowAll(!showAll)}
+                className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-600 rounded-full text-[10px] font-bold text-slate-600 transition-all shadow-sm active:scale-95"
+              >
+                <UserCircle className="w-3.5 h-3.5" />
+                {showAll ? '只看自己' : '顯示所有用戶'}
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{orders.length} 份訂單</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{displayedOrders.length} 份訂單</span>
             {onKeyInOrders && (
               <button
-                disabled={isKeyingIn || orders.filter(o => !o.isHeld && !o.isKeyedIn).length === 0}
+                disabled={isKeyingIn || keyInCount === 0}
                 onClick={async (e) => {
                   e.stopPropagation();
                   setStatusMessage(null);
@@ -109,7 +130,7 @@ const OrderList: React.FC<OrderListProps> = ({
                   }
                 }}
                 className={`px-4 py-1.5 rounded-xl font-bold text-xs select-none shadow-sm transition-all focus:outline-none flex items-center gap-1.5
-                  ${orders.filter(o => !o.isHeld && !o.isKeyedIn).length === 0 
+                  ${keyInCount === 0 
                     ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed' 
                     : isKeyingIn 
                       ? 'bg-blue-100 text-blue-500 cursor-wait'
@@ -123,7 +144,7 @@ const OrderList: React.FC<OrderListProps> = ({
                   </>
                 ) : (
                   <>
-                    入機 ({orders.filter(o => !o.isHeld && !o.isKeyedIn).length})
+                    入機 ({keyInCount})
                   </>
                 )}
               </button>
@@ -164,76 +185,90 @@ const OrderList: React.FC<OrderListProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {orders.map((order) => (
-              <React.Fragment key={order.id}>
-                  <tr 
-                    onMouseDown={() => startLongPress(order)}
-                    onMouseUp={cancelLongPress}
-                    onMouseLeave={cancelLongPress}
-                    onTouchStart={() => startLongPress(order)}
-                    onTouchEnd={cancelLongPress}
-                    onClick={() => {
-                      if (!activeMenuOrder) {
-                        onEditOrder(order);
-                      }
-                    }}
-                    className={`transition-colors group cursor-pointer ${order.isHeld ? 'bg-amber-50 h-20' : 'hover:bg-blue-50/30'}`}
-                  >
-                  <td className="px-1 py-5 text-slate-500 font-bold whitespace-nowrap text-center text-[11px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <Calendar className="w-3 h-3 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                      {formatDate(order.date)}
+            {displayedOrders.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-4 py-16 text-center text-slate-400 font-medium">
+                  <div className="flex flex-col items-center gap-3">
+                    <UserCircle className="w-10 h-10 text-slate-300" />
+                    <div>
+                      <p className="text-slate-700 font-bold">您目前沒有任何訂單記錄</p>
+                      <p className="text-xs text-slate-400 mt-1">您可以點擊上方的「顯示所有用戶」查看其他人的訂單。</p>
                     </div>
-                  </td>
-                  <td className="px-2 py-5 text-slate-900 font-black">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span className="truncate">{order.customerName}</span>
-                      {order.id && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold tracking-wider tabular-nums shrink-0 leading-none">
-                          {order.id}
-                        </span>
-                      )}
-                      {currentRole === 'Admin' && order.salesName && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-blue-50 text-blue-600 border border-blue-200 font-bold uppercase tracking-wider shrink-0 leading-none">
-                          Sales: {order.salesName}
-                        </span>
-                      )}
-                      {order.isHeld && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
-                          暫存
-                        </span>
-                      )}
-                      {order.isKeyedIn && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
-                          已入機
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-2 py-5 text-right text-slate-900 font-black tabular-nums text-sm">
-                    <div className="flex items-center justify-end gap-1 text-emerald-600">
-                      <DollarSign className="w-3.5 h-3.5" />
-                      {order.orderAmount.toLocaleString()}
-                    </div>
-                  </td>
-                </tr>
-                {order.remark && (
-                  <tr 
-                    onClick={() => onEditOrder(order)}
-                    className="border-t-0 bg-slate-50/30 hover:bg-blue-50/40 cursor-pointer transition-colors"
-                  >
-                    <td />
-                    <td colSpan={2} className="px-2 py-3 pb-5">
-                      <div className="flex items-start gap-2 text-slate-500 text-[11px] font-medium leading-relaxed bg-white/50 p-3 rounded-xl border border-slate-100/50">
-                        <MessageSquare className="w-3.5 h-3.5 text-blue-300 mt-0.5 shrink-0" />
-                        <span className="italic">{order.remark}</span>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              displayedOrders.map((order) => (
+                <React.Fragment key={order.id}>
+                    <tr 
+                      onMouseDown={() => startLongPress(order)}
+                      onMouseUp={cancelLongPress}
+                      onMouseLeave={cancelLongPress}
+                      onTouchStart={() => startLongPress(order)}
+                      onTouchEnd={cancelLongPress}
+                      onClick={() => {
+                        if (!activeMenuOrder) {
+                          onEditOrder(order);
+                        }
+                      }}
+                      className={`transition-colors group cursor-pointer ${order.isHeld ? 'bg-amber-50 h-20' : 'hover:bg-blue-50/30'}`}
+                    >
+                    <td className="px-1 py-5 text-slate-500 font-bold whitespace-nowrap text-center text-[11px]">
+                      <div className="flex items-center justify-center gap-1">
+                        <Calendar className="w-3 h-3 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                        {formatDate(order.date)}
+                      </div>
+                    </td>
+                    <td className="px-2 py-5 text-slate-900 font-black">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="truncate">{order.customerName}</span>
+                        {order.id && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold tracking-wider tabular-nums shrink-0 leading-none">
+                            {order.id}
+                          </span>
+                        )}
+                        {(currentRole === 'Admin' || showAll) && order.salesName && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-blue-50 text-blue-600 border border-blue-200 font-bold uppercase tracking-wider shrink-0 leading-none">
+                            Sales: {order.salesName}
+                          </span>
+                        )}
+                        {order.isHeld && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
+                            暫存
+                          </span>
+                        )}
+                        {order.isKeyedIn && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
+                            已入機
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 py-5 text-right text-slate-900 font-black tabular-nums text-sm">
+                      <div className="flex items-center justify-end gap-1 text-emerald-600">
+                        <DollarSign className="w-3.5 h-3.5" />
+                        {order.orderAmount.toLocaleString()}
                       </div>
                     </td>
                   </tr>
-                )}
-              </React.Fragment>
-            ))}
+                  {order.remark && (
+                    <tr 
+                      onClick={() => onEditOrder(order)}
+                      className="border-t-0 bg-slate-50/30 hover:bg-blue-50/40 cursor-pointer transition-colors"
+                    >
+                      <td />
+                      <td colSpan={2} className="px-2 py-3 pb-5">
+                        <div className="flex items-start gap-2 text-slate-500 text-[11px] font-medium leading-relaxed bg-white/50 p-3 rounded-xl border border-slate-100/50">
+                          <MessageSquare className="w-3.5 h-3.5 text-blue-300 mt-0.5 shrink-0" />
+                          <span className="italic">{order.remark}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))
+            )}
           </tbody>
         </table>
       </div>
