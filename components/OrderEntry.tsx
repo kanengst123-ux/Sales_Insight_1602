@@ -57,6 +57,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
   const [remark, setRemark] = useState(editingOrder?.remark || '');
   const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
+  const [tempPrices, setTempPrices] = useState<Record<string, string>>({});
 
   const toggleRemarkKeyword = (keyword: string, checked: boolean) => {
     if (checked) {
@@ -891,9 +892,24 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                  <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
                                    <span className="text-slate-400 text-[8px] font-bold mr-0.5">$</span>
                                    <input
-                                     type="number"
-                                     value={item.price}
-                                     onChange={(e) => handleUpdateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                     type="text"
+                                     inputMode="decimal"
+                                     value={tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price}
+                                     onChange={(e) => {
+                                       const val = e.target.value;
+                                       setTempPrices(prev => ({ ...prev, [item.id]: val }));
+                                       const parsed = parseFloat(val);
+                                       if (!isNaN(parsed)) {
+                                         handleUpdateItem(item.id, { price: parsed });
+                                       }
+                                     }}
+                                     onBlur={() => {
+                                       setTempPrices(prev => {
+                                         const copy = { ...prev };
+                                         delete copy[item.id];
+                                         return copy;
+                                        });
+                                     }}
                                      className="w-full bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
                                    />
                                  </div>
