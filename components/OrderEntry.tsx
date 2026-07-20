@@ -257,10 +257,22 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
     const grade = selectedCustomerInfo?.grade || 'C';
-    const tieredPrice = product.prices ? product.prices[grade] : (product.price || 0);
+    let tieredPrice = product.prices ? product.prices[grade] : (product.price || 0);
 
-    const defaultQty = boxInfo ? boxInfo.units : 12;
-    const qtyToAdd = isUnlimited ? defaultQty : Math.min(defaultQty, remaining);
+    const isSpecialNegativeProduct = 
+      product.name.includes('上單收多$') || 
+      product.name.includes('扣上單 $') ||
+      product.name.includes('扣上單$') ||
+      product.name.trim() === '上單收多$' ||
+      product.name.trim() === '扣上單 $' ||
+      product.name.trim() === '扣上單$';
+
+    if (isSpecialNegativeProduct) {
+      tieredPrice = -Math.abs(tieredPrice);
+    }
+
+    const defaultQty = isSpecialNegativeProduct ? -1 : (boxInfo ? boxInfo.units : 12);
+    const qtyToAdd = isSpecialNegativeProduct ? -1 : (isUnlimited ? defaultQty : Math.min(defaultQty, remaining));
 
     const newItem: OrderItem = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -268,7 +280,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       // Default to 1 outer (either parsed or fallback 12) per user request (capped by remaining stock)
       quantity: qtyToAdd,
       price: tieredPrice,
-      isOuterBox: true, // Start in outer mode
+      isOuterBox: isSpecialNegativeProduct ? false : true, // Start in unit mode for special products, outer mode for others
       unitsPerBox: boxInfo ? boxInfo.units : 12,
       outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
     };
@@ -866,7 +878,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                    <button 
                                      onClick={() => {
                                        const step = (item.isOuterBox && item.outerBoxUnit !== '打') ? (item.unitsPerBox || 1) : 1;
-                                       handleUpdateItem(item.id, { quantity: Math.max(0, item.quantity - step) });
+                                       const isSpecial = item.name.includes('上單收多$') || item.name.includes('扣上單');
+                                       handleUpdateItem(item.id, { quantity: isSpecial ? (item.quantity - step) : Math.max(0, item.quantity - step) });
                                      }}
                                      className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
                                    >

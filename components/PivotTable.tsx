@@ -3,6 +3,25 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { SaleRecord, PivotConfig, SortOrder, Product } from '../types';
 import { Filter, SortDesc, SortAsc, Search, Star, Package } from 'lucide-react';
 
+const getValByPossibleKeys = (obj: any, keys: string[]) => {
+  for (const k of keys) {
+    if (obj[k] !== undefined) return obj[k];
+    const lowerK = k.toLowerCase();
+    const matchedKey = Object.keys(obj).find(key => key.toLowerCase() === lowerK);
+    if (matchedKey) return obj[matchedKey];
+  }
+  return undefined;
+};
+
+const parseFieldNum = (obj: any, keys: string[]) => {
+  const val = getValByPossibleKeys(obj, keys);
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return val;
+  const cleaned = val.toString().replace(/[$,\s]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 interface PivotTableProps {
   data: SaleRecord[];
   headers: string[];
@@ -110,8 +129,22 @@ const PivotTable: React.FC<PivotTableProps> = ({ data, headers, products }) => {
       const rowVal = String(item[config.rowField] ?? 'N/A');
       const colVal = 'Grand Total';
       
-      const val = item[config.metric];
-      const metricVal = typeof val === 'number' ? val : parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+      let metricVal = 0;
+      if (config.metric === countKey) {
+        if (config.rowField === itemKey) {
+          const qty = parseFieldNum(item, ['Quantity', 'quantity']);
+          const ref = parseFieldNum(item, ['Ref', 'ref']);
+          metricVal = qty * ref;
+        } else if (config.rowField === customerKey) {
+          metricVal = 1;
+        } else {
+          const val = item[config.metric];
+          metricVal = typeof val === 'number' ? val : parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+        }
+      } else {
+        const val = item[config.metric];
+        metricVal = typeof val === 'number' ? val : parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+      }
 
       rows.add(rowVal);
 
