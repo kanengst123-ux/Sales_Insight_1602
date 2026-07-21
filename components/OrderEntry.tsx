@@ -735,10 +735,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           {selectedItems.length > 0 && (
                             <button 
                               onClick={handleFinalSave}
-                              className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-xl shadow-lg shadow-green-500/20 active:scale-95 transition-all group shrink-0"
+                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg shadow-md shadow-green-500/20 active:scale-95 transition-all group shrink-0 text-xs font-bold"
                               title="Place Order"
                             >
-                              <Check className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                              此單完成
                             </button>
                           )}
                         </div>
@@ -746,10 +746,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         <div className="flex flex-wrap items-center gap-3">
                           <button 
                             onClick={() => setShowRemarkInput(!showRemarkInput)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border ${
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border shadow-md ${
                               remark 
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-                                : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'
+                                ? 'bg-blue-700 text-white border-blue-700 shadow-blue-700/20' 
+                                : 'bg-blue-500 text-white border-blue-500 hover:bg-blue-600 hover:border-blue-600 shadow-blue-500/20'
                             }`}
                           >
                             <Check className={`w-3 h-3 ${remark ? 'block' : 'hidden'}`} />
