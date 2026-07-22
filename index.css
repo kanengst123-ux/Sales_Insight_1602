@@ -7,10 +7,6 @@
 }
 
 @layer base {
-  html, body, #root {
-    overscroll-behavior: none;
-    overscroll-behavior-y: none;
-  }
   body {
     @apply font-sans bg-[#f8fafc] text-slate-900;
   }
