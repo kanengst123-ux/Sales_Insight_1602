@@ -24,9 +24,8 @@ const OrderList: React.FC<OrderListProps> = ({
   onKeyInOrders,
   isKeyingIn = false
 }) => {
-  const [activeMenuOrder, setActiveMenuOrder] = useState<SavedOrder | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
 
   const [showAll, setShowAll] = useState(currentRole === 'Admin' || !currentRole);
 
@@ -38,17 +37,6 @@ const OrderList: React.FC<OrderListProps> = ({
     o => (currentRole === 'Admin' || o.salesName === currentRole) && !o.isHeld && !o.isKeyedIn
   ).length;
 
-  const startLongPress = useCallback((order: SavedOrder) => {
-    longPressTimer.current = setTimeout(() => {
-      setActiveMenuOrder(order);
-    }, 600); // 600ms for long press
-  }, []);
-
-  const cancelLongPress = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-    }
-  }, []);
   if (orders.length === 0) {
     return (
       <div className="bg-white rounded-[2.5rem] p-6 sm:p-16 flex flex-col items-center text-center gap-6 shadow-sm border border-slate-200 relative overflow-hidden">
@@ -220,51 +208,75 @@ const OrderList: React.FC<OrderListProps> = ({
               displayedOrders.map((order) => (
                 <React.Fragment key={order.id}>
                     <tr 
-                      onMouseDown={() => startLongPress(order)}
-                      onMouseUp={cancelLongPress}
-                      onMouseLeave={cancelLongPress}
-                      onTouchStart={() => startLongPress(order)}
-                      onTouchEnd={cancelLongPress}
-                      onClick={() => {
-                        if (!activeMenuOrder) {
-                          onEditOrder(order);
-                        }
-                      }}
-                      className={`transition-colors group cursor-pointer ${order.isHeld ? 'bg-amber-50 h-20' : 'hover:bg-blue-50/30'}`}
+                      onClick={() => onEditOrder(order)}
+                      className={`transition-colors group cursor-pointer ${order.isHeld ? 'bg-amber-50/70' : 'hover:bg-blue-50/30'}`}
                     >
-                    <td className="px-1 py-5 text-slate-500 font-bold whitespace-nowrap text-center text-[11px]">
+                    <td className="px-1 py-4 text-slate-500 font-bold whitespace-nowrap text-center text-[11px] align-top pt-4">
                       <div className="flex items-center justify-center gap-1">
                         <Calendar className="w-3 h-3 text-slate-400 group-hover:text-blue-500 transition-colors" />
                         {formatDate(order.date)}
                       </div>
                     </td>
-                    <td className="px-2 py-5 text-slate-900 font-black">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="truncate">{order.customerName}</span>
-                        {order.id && (
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold tracking-wider tabular-nums shrink-0 leading-none">
-                            {order.id}
-                          </span>
-                        )}
-                        {(currentRole === 'Admin' || showAll) && order.salesName && (
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-blue-50 text-blue-600 border border-blue-200 font-bold uppercase tracking-wider shrink-0 leading-none">
-                            Sales: {order.salesName}
-                          </span>
-                        )}
-                        {order.isHeld && (
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
-                            暫存
-                          </span>
-                        )}
-                        {order.isKeyedIn && (
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
-                            已入機
-                          </span>
-                        )}
+                    <td className="px-2 py-4 text-slate-900 font-black align-top pt-3.5">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="truncate">{order.customerName}</span>
+                          {order.id && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold tracking-wider tabular-nums shrink-0 leading-none">
+                              {order.id}
+                            </span>
+                          )}
+                          {(currentRole === 'Admin' || showAll) && order.salesName && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-blue-50 text-blue-600 border border-blue-200 font-bold uppercase tracking-wider shrink-0 leading-none">
+                              Sales: {order.salesName}
+                            </span>
+                          )}
+                          {order.isHeld && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
+                              暫存
+                            </span>
+                          )}
+                          {order.isKeyedIn && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
+                              已入機
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Tiny buttons under the customer name */}
+                        <div className="flex items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleHold(order.id);
+                            }}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 border ${
+                              order.isHeld
+                                ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-800'
+                            }`}
+                          >
+                            <Anchor className="w-2.5 h-2.5" />
+                            <span>{order.isHeld ? '取消暫存' : '暫存'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOrderToDelete(order);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:text-rose-700"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                            <span>刪除</span>
+                          </button>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-2 py-5 text-right text-slate-900 font-black tabular-nums text-sm">
+                    <td className="px-2 py-4 text-right text-slate-900 font-black tabular-nums text-sm align-top pt-4">
                       <div className="flex items-center justify-end gap-1 text-emerald-600">
                         <DollarSign className="w-3.5 h-3.5" />
                         {order.orderAmount.toLocaleString()}
@@ -292,68 +304,6 @@ const OrderList: React.FC<OrderListProps> = ({
         </table>
       </div>
     </div>
-      
-    <AnimatePresence>
-        {activeMenuOrder && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveMenuOrder(null)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-white rounded-[2rem] shadow-2xl p-6 w-full max-w-xs overflow-hidden"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Order Options</h4>
-                <button 
-                  onClick={() => setActiveMenuOrder(null)}
-                  className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
-              </div>
-              
-              <div className="space-y-3">
-                <button 
-                  onClick={() => {
-                    onToggleHold(activeMenuOrder.id);
-                    setActiveMenuOrder(null);
-                  }}
-                  className="w-full flex items-center justify-between p-4 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-700 transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-xl shadow-sm">
-                      <Anchor className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold">{activeMenuOrder.isHeld ? 'Unhold Order' : 'Hold Order'}</span>
-                  </div>
-                </button>
-
-                <button 
-                  onClick={() => {
-                    onDeleteOrder(activeMenuOrder.id);
-                    setActiveMenuOrder(null);
-                  }}
-                  className="w-full flex items-center justify-between p-4 rounded-2xl bg-red-50 hover:bg-red-100 text-red-700 transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-xl shadow-sm">
-                      <Trash2 className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold">Delete Order</span>
-                  </div>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {currentRole && (
         <button 
@@ -365,6 +315,61 @@ const OrderList: React.FC<OrderListProps> = ({
           <span className="font-black text-xs uppercase tracking-widest whitespace-nowrap hidden md:block">落單</span>
         </button>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AnimatePresence>
+        {orderToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setOrderToDelete(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-white rounded-3xl shadow-2xl p-6 w-full max-w-xs overflow-hidden z-10 border border-slate-100"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-slate-900">確認刪除訂單？</h4>
+                  <p className="text-xs font-bold text-slate-400">{orderToDelete.customerName}</p>
+                </div>
+              </div>
+              
+              <p className="text-xs text-slate-600 mb-6 font-medium leading-relaxed">
+                確定要刪除「<span className="font-bold text-slate-900">{orderToDelete.customerName}</span>」金額為 <span className="font-bold text-emerald-600">${orderToDelete.orderAmount.toLocaleString()}</span> 的訂單嗎？此操作無法復原。
+              </p>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOrderToDelete(null)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteOrder(orderToDelete.id);
+                    setOrderToDelete(null);
+                  }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-colors"
+                >
+                  確認刪除
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
