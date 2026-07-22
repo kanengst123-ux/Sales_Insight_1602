@@ -3,6 +3,29 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
+// Prevent Android / mobile browser pull-to-refresh gesture when at the top of the page
+let startTouchY = 0;
+
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    startTouchY = e.touches[0].clientY;
+  }
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 1) {
+    const currentY = e.touches[0].clientY;
+    const isPullingDown = currentY > startTouchY;
+    const isAtTop = window.scrollY <= 0 || document.documentElement.scrollTop <= 0 || document.body.scrollTop <= 0;
+
+    if (isAtTop && isPullingDown) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    }
+  }
+}, { passive: false });
+
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
