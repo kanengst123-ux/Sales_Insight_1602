@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { SavedOrder } from '../types';
-import { Calendar, User, DollarSign, MessageSquare, UserCircle, Plus, Trash2, Anchor, X } from 'lucide-react';
+import { Calendar, User, DollarSign, MessageSquare, UserCircle, Plus, Trash2, Anchor, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface OrderListProps {
@@ -97,13 +97,32 @@ const OrderList: React.FC<OrderListProps> = ({
               </span>
             </div>
             {currentRole && currentRole !== 'Admin' && (
-              <button
-                onClick={() => setShowAll(!showAll)}
-                className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-600 rounded-full text-[10px] font-bold text-slate-600 transition-all shadow-sm active:scale-95"
-              >
-                <UserCircle className="w-3.5 h-3.5" />
-                {showAll ? '只看自己' : '顯示所有用戶'}
-              </button>
+              <div className="inline-flex p-1 bg-slate-100 border border-slate-200/80 rounded-full text-[10px] font-bold shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setShowAll(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-all duration-200 ${
+                    !showAll
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black scale-[1.02]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  只看自己
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-all duration-200 ${
+                    showAll
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black scale-[1.02]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  顯示所有用戶
+                </button>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-3">

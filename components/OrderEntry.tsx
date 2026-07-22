@@ -594,9 +594,21 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     </>
   );
 
+  const renderFloatingBackButton = () => (
+    <button 
+      type="button"
+      onClick={onBack}
+      className="fixed bottom-4 left-4 z-[9999] flex items-center gap-1.5 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/60 rounded-full shadow-2xl backdrop-blur-md active:scale-95 transition-all group cursor-pointer text-xs font-bold pointer-events-auto"
+      title="返回主頁"
+    >
+      <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform text-blue-400" />
+      <span>返回主頁</span>
+    </button>
+  );
+
   if (selectedCustomer) {
     return (
-      <div className="min-h-screen w-full bg-white animate-in fade-in slide-in-from-right-4 duration-500 flex flex-col overflow-x-hidden">
+      <div className="min-h-screen w-full bg-white animate-in fade-in duration-300 flex flex-col overflow-x-hidden">
         {/* Top Layer: Product Search Box */}
         <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50 shadow-sm">
           <div className="w-full max-w-md mx-auto relative flex items-center gap-2">
@@ -1058,6 +1070,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             </div>
           </div>
         </div>
+        {renderFloatingBackButton()}
         {renderModals()}
       </div>
     );
@@ -1065,7 +1078,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   if (selectedRole) {
     return (
-      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in slide-in-from-right-4 duration-500 overflow-x-hidden">
+      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in duration-300 overflow-x-hidden">
         <div className="w-full max-w-md mx-auto pt-4">
           <div className="flex items-center justify-between mb-4">
             <button 
@@ -1174,6 +1187,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             )}
           </div>
         </div>
+        {renderFloatingBackButton()}
         {renderModals()}
       </div>
     );
@@ -1185,14 +1199,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
       
       <div className="relative z-10 w-full max-w-sm px-2 sm:px-0">
-        <button 
-          onClick={onBack}
-          className="mb-6 flex items-center gap-2 text-slate-500 hover:text-blue-400 transition-colors group mx-auto"
-        >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em]">返回主頁 / EXIT SYSTEM</span>
-        </button>
-
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 shadow-2xl">
           <div className="text-center mb-10">
             <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-2xl shadow-blue-600/40 mb-6 rotate-3">
@@ -1224,6 +1230,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
           </div>
         </div>
       </div>
+      {renderFloatingBackButton()}
     </div>
   );
 };
