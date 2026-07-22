@@ -403,6 +403,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const filteredCustomers = useMemo(() => {
     if (!selectedRole) return [];
     
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      return customers
+        .filter(c => 
+          c.name.toLowerCase().includes(query) || 
+          (c.sales && c.sales.toLowerCase().includes(query)) ||
+          (c.district && c.district.toLowerCase().includes(query))
+        )
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
+    }
+
     let baseList: Customer[] = [];
     if (selectedRole === 'Admin') {
       baseList = customers.filter(c => ['落鋪', 'HKTVMALL', '其他'].includes(c.name));
@@ -414,16 +425,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       baseList = baseList.filter(c => c.district === selectedDistrict);
     }
 
-    let result = baseList;
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = baseList.filter(c => 
-        c.name.toLowerCase().includes(query) || 
-        (selectedRole === 'Admin' && c.sales.toLowerCase().includes(query))
-      );
-    }
-
-    return [...result].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
+    return [...baseList].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
   }, [customers, selectedRole, searchQuery, selectedDistrict]);
 
   const renderModals = () => (
@@ -733,7 +735,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-40 sm:pb-36 md:pb-28 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
@@ -966,7 +968,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-40 sm:pb-36 md:pb-28 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
@@ -1030,8 +1032,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
           </div>
 
           {/* Floating Bottom Tab Switcher (Slide Bar) */}
-          <div className="absolute bottom-24 md:bottom-12 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
-            <div className="w-full max-w-[280px] bg-white/90 backdrop-blur-md border border-slate-100 rounded-2xl shadow-xl shadow-slate-200/40 p-1 flex items-center relative pointer-events-auto">
+          <div className="fixed bottom-4 right-4 sm:left-1/2 sm:-translate-x-1/2 z-30 flex justify-center pointer-events-none">
+            <div className="w-full max-w-[240px] sm:max-w-[280px] bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl shadow-slate-300/50 p-1 flex items-center relative pointer-events-auto">
               {/* Sliding highlight background */}
               <div className="absolute inset-y-1 left-1 bottom-1 top-1 pointer-events-none" style={{ width: 'calc(50% - 4px)' }}>
                 <motion.div
@@ -1078,8 +1080,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   if (selectedRole) {
     return (
-      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in duration-300 overflow-x-hidden">
-        <div className="w-full max-w-md mx-auto pt-4">
+      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in duration-300 overflow-x-hidden flex flex-col">
+        <div className="w-full max-w-md mx-auto pt-4 flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <button 
               onClick={() => setSelectedRole(null)}
@@ -1154,7 +1156,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 document.activeElement.blur();
               }
             }}
-            className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-20"
+            className="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 custom-scrollbar pb-20"
           >
             {filteredCustomers.length === 0 ? (
               <div className="col-span-2 p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">
@@ -1176,8 +1178,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         c.grade === 'B' ? 'bg-slate-100 text-slate-600' :
                         'bg-orange-100 text-orange-700'
                       }`}>Grade {c.grade}</span>
-                      {selectedRole === 'Admin' && (
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales}</p>
+                      {(selectedRole === 'Admin' || searchQuery.trim()) && c.sales && (
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales}{c.district ? ` (${c.district})` : ''}</p>
                       )}
                     </div>
                   </div>
