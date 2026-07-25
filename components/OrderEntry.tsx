@@ -916,29 +916,67 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                    </button>
                                  </div>
  
-                                 <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
-                                   <span className="text-slate-400 text-[8px] font-bold mr-0.5">$</span>
-                                   <input
-                                     type="text"
-                                     inputMode="decimal"
-                                     value={tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price}
-                                     onChange={(e) => {
-                                       const val = e.target.value;
-                                       setTempPrices(prev => ({ ...prev, [item.id]: val }));
-                                       const parsed = parseFloat(val);
-                                       if (!isNaN(parsed)) {
-                                         handleUpdateItem(item.id, { price: parsed });
-                                       }
-                                     }}
-                                     onBlur={() => {
+                                 <div className="flex items-center gap-1 flex-shrink-0">
+                                   <button 
+                                     type="button"
+                                     onClick={() => {
+                                       const currentPrice = tempPrices[item.id] !== undefined ? (parseFloat(tempPrices[item.id]) || 0) : item.price;
+                                       const newPrice = Math.round((currentPrice - 1) * 100) / 100;
+                                       handleUpdateItem(item.id, { price: newPrice });
                                        setTempPrices(prev => {
                                          const copy = { ...prev };
                                          delete copy[item.id];
                                          return copy;
-                                        });
+                                       });
                                      }}
-                                     className="w-full bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                   />
+                                     className="p-1 text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 transition-colors flex-shrink-0 active:scale-95"
+                                     title="減$1"
+                                   >
+                                     <Minus className="w-2.5 h-2.5" />
+                                   </button>
+
+                                   <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
+                                     <span className="text-slate-400 text-[8px] font-bold mr-0.5 shrink-0">$</span>
+                                     <input
+                                       type="text"
+                                       inputMode="decimal"
+                                       value={tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price}
+                                       onChange={(e) => {
+                                         const val = e.target.value;
+                                         setTempPrices(prev => ({ ...prev, [item.id]: val }));
+                                         const parsed = parseFloat(val);
+                                         if (!isNaN(parsed)) {
+                                           handleUpdateItem(item.id, { price: parsed });
+                                         }
+                                       }}
+                                       onBlur={() => {
+                                         setTempPrices(prev => {
+                                           const copy = { ...prev };
+                                           delete copy[item.id];
+                                           return copy;
+                                         });
+                                       }}
+                                       className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                     />
+                                   </div>
+
+                                   <button 
+                                     type="button"
+                                     onClick={() => {
+                                       const currentPrice = tempPrices[item.id] !== undefined ? (parseFloat(tempPrices[item.id]) || 0) : item.price;
+                                       const newPrice = Math.round((currentPrice + 1) * 100) / 100;
+                                       handleUpdateItem(item.id, { price: newPrice });
+                                       setTempPrices(prev => {
+                                         const copy = { ...prev };
+                                         delete copy[item.id];
+                                         return copy;
+                                       });
+                                     }}
+                                     className="p-1 text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 transition-colors flex-shrink-0 active:scale-95"
+                                     title="加$1"
+                                   >
+                                     <Plus className="w-2.5 h-2.5" />
+                                   </button>
                                  </div>
  
                                  <div className="flex-1 text-right min-w-0 px-1">
