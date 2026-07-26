@@ -352,15 +352,15 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col md:flex-row relative">
-      <header className="md:hidden bg-slate-900 text-white p-4 flex items-center justify-between sticky top-0 z-30 shadow-md">
+      <header className="md:hidden bg-slate-900 text-white px-3 py-2 flex items-center justify-between sticky top-0 z-30 shadow-md">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-600 rounded-lg">
-            <BarChart3 className="w-5 h-5" />
+          <div className="p-1 bg-blue-600 rounded-md">
+            <BarChart3 className="w-4 h-4" />
           </div>
-          <span className="font-bold text-lg tracking-tight">榮昇銷售數據</span>
+          <span className="font-bold text-sm tracking-tight">榮昇銷售數據</span>
         </div>
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-          {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1 hover:bg-slate-800 rounded-md transition-colors">
+          {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </header>
 
@@ -376,11 +376,11 @@ const App: React.FC = () => {
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         md:translate-x-0 md:w-64
       `}>
-        <div className="hidden md:flex items-center gap-3 mb-10">
-          <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-600/20">
-            <BarChart3 className="w-6 h-6" />
+        <div className="hidden md:flex items-center gap-2.5 mb-6">
+          <div className="p-1.5 bg-blue-600 rounded-md shadow-md shadow-blue-600/20">
+            <BarChart3 className="w-5 h-5" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">榮昇銷售數據</h1>
+          <h1 className="text-base font-bold tracking-tight">榮昇銷售數據</h1>
         </div>
 
         <nav className="flex-1 space-y-2">
