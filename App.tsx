@@ -149,9 +149,13 @@ const App: React.FC = () => {
       };
 
       const sentTime = formatDateTime(new Date());
-      const rowsToSend: any[][] = [];
+      const adminRows: any[][] = [];
+      const regularRows: any[][] = [];
 
       ordersToKeyIn.forEach(order => {
+        const isAdminOrder = order.salesName?.trim().toLowerCase() === 'admin';
+        const targetRows = isAdminOrder ? adminRows : regularRows;
+
         order.items.forEach((item, index) => {
           const remarkCol = index === 0 ? (order.remark || '') : '';
           
@@ -176,7 +180,7 @@ const App: React.FC = () => {
           const matchedProd = products.find(p => p.name.trim() === item.name.trim());
           const productId = matchedProd?.id || "";
 
-          rowsToSend.push([
+          targetRows.push([
             sentTime,             // Col A: Date & time sent
             item.name,            // Col B: Item (product name)
             productId,            // Col C: Product ID (Col B of raw tab)
@@ -195,7 +199,15 @@ const App: React.FC = () => {
         });
       });
 
-      const success = await writeTradeLogToSheet(rowsToSend);
+      let success = true;
+      if (regularRows.length > 0) {
+        const res = await writeTradeLogToSheet(regularRows, 'Trade_Log');
+        if (!res) success = false;
+      }
+      if (adminRows.length > 0) {
+        const res = await writeTradeLogToSheet(adminRows, 'Trade_log_admin');
+        if (!res) success = false;
+      }
       if (success) {
         setSavedOrders(prev => prev.map(o => {
           const shouldMark = ordersToKeyIn.some(toKey => toKey.id === o.id);

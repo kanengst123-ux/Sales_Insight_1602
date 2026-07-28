@@ -1,7 +1,7 @@
 /**
- * Google Apps Script Web App Template for the Trade Log App.
- * Copy and paste this code into your Google Apps Script editor (found under Extensions > Apps Script in your Spreadsheet),
- * then click "Deploy" > "New deployment" as a "Web app" (Execute as: Me, Who has access: Anyone) to get your new URL.
+ * Google Apps Script Web App Template for Salestable / Trade Log App.
+ * Fully supports writeTradeLog (with separate Trade_log_admin for Admin orders),
+ * addProduct / updateProduct, addCustomer, deleteOrder, getProducts, and getCustomers.
  */
 
 function doPost(e) {
@@ -9,55 +9,92 @@ function doPost(e) {
     var param = JSON.parse(e.postData.contents);
     var action = param.action;
     
-    // 1. Action: addProduct
-    if (action === 'addProduct') {
+    // 1. Action: addProduct or updateProduct
+    if (action === 'addProduct' || action === 'updateProduct' || (!action && param.id)) {
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
       if (!sheet) {
-        // Fallback in case raw sheet is not named 'raw'
         sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
       }
       
       var name = param.name;
-      var username = param.username;
       var id = param.id;
+      var price = param.price;
+      var priceA = param.priceA;
+      var priceB = param.priceB;
+      var priceC = param.priceC;
+      var quantity = param.quantity;
+      var remarks = param.remarks;
+      var username = param.username || "System";
       
-      // Target Columns format for raw sheet:
-      // Col C : Product Name, Col A/B : Metadata or user
-      // Append row to 'raw' sheet:
-      sheet.appendRow([new Date(), username, name, id]);
-      
-      // Mark as unlimited stock
-      try {
-        var values = sheet.getDataRange().getValues();
-        var unlimitedIdx = 27; // Default Col AB (0-indexed 27)
-        for (var i = 0; i < Math.min(values.length, 10); i++) {
-          var row = values[i];
-          var foundIdx = -1;
-          for (var j = 0; j < row.length; j++) {
-            if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
-              foundIdx = j;
-              break;
-            }
-          }
-          if (foundIdx !== -1) {
-            for (var j = 0; j < row.length; j++) {
-              var cellStr = (row[j] || '').toString().toLowerCase().trim();
-              if (cellStr.replace(/[\s_-]/g, '').indexOf('unlimitedstock') !== -1) {
-                unlimitedIdx = j;
-                break;
-              }
-            }
-            break;
-          }
+      var data = sheet.getDataRange().getValues();
+      var foundIndex = -1;
+      for (var i = 1; i < data.length; i++) {
+        var rowName = (data[i][2] || "").toString().trim();
+        var rowId = (data[i][1] || "").toString().trim();
+        if ((id && rowId === id.toString().trim()) || (name && rowName === name.toString().trim())) {
+          foundIndex = i;
+          break;
         }
-        var lastRow = sheet.getLastRow();
-        sheet.getRange(lastRow, unlimitedIdx + 1).setValue(1);
-      } catch (err) {
-        console.error('Error marking as unlimited stock:', err);
       }
       
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Product added to raw tab' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      var rowToUpdate = foundIndex !== -1 ? foundIndex + 1 : sheet.getLastRow() + 1;
+      
+      if (foundIndex === -1) {
+        sheet.getRange(rowToUpdate, 1).setValue(new Date()); // Col A: Timestamp
+        sheet.getRange(rowToUpdate, 2).setValue(id || "");  // Col B: SKU / ID
+        sheet.getRange(rowToUpdate, 3).setValue(name || ""); // Col C: Product Name
+        sheet.getRange(rowToUpdate, 4).setValue(id || "");  // Col D: Metadata / SKU ID
+      } else {
+        sheet.getRange(rowToUpdate, 2).setValue(id || "");
+        sheet.getRange(rowToUpdate, 3).setValue(name || "");
+      }
+      
+      function safeParsePrice(val) {
+        if (val === undefined || val === null || val.toString().trim() === "") {
+          return NaN;
+        }
+        var cleaned = val.toString().replace('$', '').replace(/,/g, '').trim();
+        var parsed = parseFloat(cleaned);
+        return isNaN(parsed) ? NaN : parsed;
+      }
+
+      var pNum = safeParsePrice(price);
+      if (!isNaN(pNum)) {
+        sheet.getRange(rowToUpdate, 15).setValue(pNum); // Col O: Price
+      }
+      
+      var pA = safeParsePrice(priceA);
+      if (!isNaN(pA)) {
+        sheet.getRange(rowToUpdate, 18).setValue(pA); // Col R: A 價 (Gold Price)
+      } else if (!isNaN(pNum)) {
+        sheet.getRange(rowToUpdate, 18).setValue(pNum);
+      }
+
+      var pB = safeParsePrice(priceB);
+      if (!isNaN(pB)) {
+        sheet.getRange(rowToUpdate, 19).setValue(pB); // Col S: B 價 (Silver Price)
+      } else if (!isNaN(pNum)) {
+        sheet.getRange(rowToUpdate, 19).setValue(pNum);
+      }
+
+      var pC = safeParsePrice(priceC);
+      if (!isNaN(pC)) {
+        sheet.getRange(rowToUpdate, 20).setValue(pC); // Col T: C 價 (Basic Price)
+      } else if (!isNaN(pNum)) {
+        sheet.getRange(rowToUpdate, 20).setValue(pNum);
+      }
+      
+      var abVal = (quantity === "" || quantity === undefined) ? 1 : 0;
+      var acVal = abVal === 1 ? "" : (quantity || "0");
+      
+      sheet.getRange(rowToUpdate, 28).setValue(abVal); // Col AB: UnlimitedStock
+      sheet.getRange(rowToUpdate, 29).setValue(acVal); // Col AC: Stock / 庫存
+      sheet.getRange(rowToUpdate, 30).setValue(remarks || ""); // Col AD: Remarks
+      
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: 'success', 
+        message: 'Product synced successfully in row ' + rowToUpdate
+      })).setMimeType(ContentService.MimeType.JSON);
     }
     
     // 2. Action: addCustomer
@@ -80,246 +117,307 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     
-    // 3. Action: writeTradeLog (Supports INSERT and UPDATE)
+    // 3. Action: writeTradeLog (Writes to Trade_Log or Trade_log_admin for Admin orders, & deducts inventory)
     if (action === 'writeTradeLog') {
-      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Trade_Log');
-      if (!sheet) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Trade_Log sheet not found' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      var rows = param.rows; // Array of arrays representing the rows
+      var rows = param.rows; // Array of arrays
       if (!rows || rows.length === 0) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'No rows sent' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
-      
-      // Ensure the sheet has enough columns to hold our 13-column wide schema
-      var maxCols = sheet.getMaxColumns();
-      var neededCols = Math.max(13, rows[0].length);
-      if (maxCols < neededCols) {
-        sheet.insertColumnsAfter(maxCols, neededCols - maxCols);
+
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+      // Determine target sheet name
+      var isTargetAdmin = false;
+      if (param.targetSheet === 'Trade_log_admin' || param.isAdmin === true) {
+        isTargetAdmin = true;
+      } else if (rows[0] && rows[0].length > 10) {
+        var userCol = (rows[0][10] || '').toString().trim().toLowerCase();
+        if (userCol === 'admin') {
+          isTargetAdmin = true;
+        }
       }
 
-      // Gather all unique Order IDs from Column M of the incoming rows (Index 12)
+      var sheet;
+      var targetSheetName;
+
+      if (isTargetAdmin) {
+        targetSheetName = 'Trade_log_admin';
+        sheet = ss.getSheetByName('Trade_log_admin') || 
+                ss.getSheetByName('Trade_Log_admin') || 
+                ss.getSheetByName('trade_log_admin');
+        if (!sheet) {
+          sheet = ss.insertSheet('Trade_log_admin');
+        }
+      } else {
+        targetSheetName = 'Trade_Log';
+        sheet = ss.getSheetByName('Trade_Log') || 
+                ss.getSheetByName('trade_log') || 
+                ss.getSheetByName('交易記錄');
+        if (!sheet) {
+          sheet = ss.getSheetByName('Trade_Log') || ss.getSheets()[0];
+        }
+      }
+
+      // 3a. Revert previous stock if modifying existing order IDs
       var incomingIds = {};
       for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        if (row.length >= 13) {
-          var orderId = row[12]; // Col M is index 12 (0-indexed)
-          if (orderId) {
-            incomingIds[orderId.toString().trim()] = true;
-          }
+        if (rows[i].length >= 13) {
+          var oId = (rows[i][12] || '').toString().trim();
+          if (oId) incomingIds[oId] = true;
         }
       }
 
-      // Revert stock of previous matching rows in Trade_Log before applying new subtractions
-      revertStockForOrders(incomingIds);
-      
-      // Update stock quantities in the 'raw' sheet, Col AC
-      try {
-        var rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
-        if (!rawSheet) {
-          rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-        }
-        if (rawSheet) {
-          var rawValues = rawSheet.getDataRange().getValues();
-          var rawHeaderRowIdx = 0;
-          var rawTitleIdx = 2; // Col C default
-          var rawUnlimitedIdx = 27; // Col AB default
-          var rawStockIdx = 28; // Col AC default
-          
-          for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
-            var row = rawValues[i];
-            var foundIdx = -1;
-            for (var j = 0; j < row.length; j++) {
-              if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
-                foundIdx = j;
-                break;
-              }
-            }
-            if (foundIdx !== -1) {
-              rawHeaderRowIdx = i;
-              rawTitleIdx = foundIdx;
-              for (var j = 0; j < row.length; j++) {
-                var cellStr = (row[j] || '').toString().toLowerCase().trim();
-                var normed = cellStr.replace(/[\s_-]/g, '');
-                if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
-                else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
-              }
-              break;
-            }
-          }
-
-          // Create index of product name to row index
-          var prodToIndex = {};
-          for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
-            var pName = rawValues[rIdx][rawTitleIdx];
-            if (pName && pName.toString().trim()) {
-              prodToIndex[pName.toString().trim()] = rIdx;
-            }
-          }
-
-          // Apply subtractions
-          for (var i = 0; i < rows.length; i++) {
-            var incomingRow = rows[i];
-            if (incomingRow.length < 6) continue;
-            var incomingProdName = (incomingRow[1] || '').toString().trim();
-            var colD = incomingRow[3];
-            var colF = incomingRow[5];
-            
-            var soldQty = 0;
-            if (colD !== undefined && colF !== undefined) {
-              var parseVal = function(v) {
-                if (v === undefined || v === null || v === '') return 0;
-                if (typeof v === 'number') return v;
-                var parsed = parseFloat(v.toString().replace(/[$,\s]/g, ''));
-                return isNaN(parsed) ? 0 : parsed;
-              };
-              soldQty = parseVal(colD) * parseVal(colF);
-            }
-
-            if (incomingProdName && soldQty > 0) {
-              var targetIndex = prodToIndex[incomingProdName];
-              if (targetIndex !== undefined) {
-                var rawRow = rawValues[targetIndex];
-                var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
-                if (!isUnlimited) {
-                  var currentStockStr = rawRow[rawStockIdx];
-                  var currentStock = 0;
-                  if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
-                    var parsedStock = parseFloat(currentStockStr.toString().replace(/[$,\s]/g, ''));
-                    if (!isNaN(parsedStock)) {
-                      currentStock = parsedStock;
-                    }
-                  }
-                  var newStock = currentStock - soldQty;
-                  rawValues[targetIndex][rawStockIdx] = newStock;
-                  rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
+      // Delete existing rows with matching order IDs across all trade log tabs
+      var uniqueIdsToDelete = Object.keys(incomingIds);
+      if (uniqueIdsToDelete.length > 0) {
+        var logSheetsToClean = ['Trade_Log', 'trade_log', '交易記錄', 'Trade_log_admin', 'Trade_Log_admin', 'trade_log_admin'];
+        logSheetsToClean.forEach(function(sName) {
+          var targetLogSheet = ss.getSheetByName(sName);
+          if (targetLogSheet) {
+            var lastRow = targetLogSheet.getLastRow();
+            if (lastRow > 1) {
+              var colMValues = targetLogSheet.getRange(2, 13, lastRow - 1, 1).getValues();
+              for (var r = lastRow; r >= 2; r--) {
+                var cellValue = colMValues[r - 2][0];
+                if (cellValue && incomingIds[cellValue.toString().trim()]) {
+                  targetLogSheet.deleteRow(r);
                 }
               }
             }
           }
-        }
-      } catch (stockError) {
-        console.error('Error updating stock in raw sheet:', stockError);
+        });
+      }
+
+      // 3b. Append new trade rows
+      for (var i = 0; i < rows.length; i++) {
+        sheet.appendRow(rows[i]);
       }
       
-      // Delete existing rows with these matching order IDs in Column M (13th column)
-      var uniqueIdsToDelete = Object.keys(incomingIds);
-      if (uniqueIdsToDelete.length > 0) {
-        var lastRow = sheet.getLastRow();
-        if (lastRow > 1) {
-          // Fetch Col M (Column 13) values (from row 2 to lastRow)
-          var colMValues = sheet.getRange(2, 13, lastRow - 1, 1).getValues();
+      // 3c. Deduct inventory quantities automatically from 'raw' sheet
+      var rawSheet = ss.getSheetByName('raw');
+      if (rawSheet) {
+        var rawValues = rawSheet.getDataRange().getValues();
+        var rawHeaderRowIdx = 0;
+        var rawTitleIdx = 2; // Default Col C
+        var rawUnlimitedIdx = 27; // Col AB
+        var rawStockIdx = 28; // Col AC
+        
+        for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
+          var row = rawValues[i];
+          var foundIdx = -1;
+          for (var j = 0; j < row.length; j++) {
+            if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+              foundIdx = j;
+              break;
+            }
+          }
+          if (foundIdx !== -1) {
+            rawHeaderRowIdx = i;
+            rawTitleIdx = foundIdx;
+            for (var j = 0; j < row.length; j++) {
+              var cellStr = (row[j] || '').toString().toLowerCase().trim();
+              var normed = cellStr.replace(/[\s_-]/g, '');
+              if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
+              else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
+            }
+            break;
+          }
+        }
+
+        var prodToIndex = {};
+        for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
+          var pName = rawValues[rIdx][rawTitleIdx];
+          if (pName && pName.toString().trim()) {
+            prodToIndex[pName.toString().trim()] = rIdx;
+          }
+        }
+
+        for (var i = 0; i < rows.length; i++) {
+          var incomingRow = rows[i];
+          if (incomingRow.length < 6) continue;
+          var incomingProdName = (incomingRow[1] || '').toString().trim();
+          var colD = incomingRow[3];
+          var colF = incomingRow[5];
           
-          // Iterate backward to avoid row index shifting during deletion
-          for (var r = lastRow; r >= 2; r--) {
-            var cellValue = colMValues[r - 2][0];
-            if (cellValue && incomingIds[cellValue.toString().trim()]) {
-              sheet.deleteRow(r);
+          var soldQty = 0;
+          if (colD !== undefined && colF !== undefined) {
+            var parseVal = function(v) {
+              if (v === undefined || v === null || v === '') return 0;
+              if (typeof v === 'number') return v;
+              var cleaned = v.toString().replace('$', '').replace(/,/g, '').trim();
+              var parsed = parseFloat(cleaned);
+              return isNaN(parsed) ? 0 : parsed;
+            };
+            soldQty = parseVal(colD) * parseVal(colF);
+          }
+
+          if (incomingProdName && soldQty > 0) {
+            var targetIndex = prodToIndex[incomingProdName];
+            if (targetIndex !== undefined) {
+              var rawRow = rawValues[targetIndex];
+              var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
+              if (!isUnlimited) {
+                var currentStockStr = rawRow[rawStockIdx];
+                var currentStock = 0;
+                if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
+                  var parsedStock = parseFloat(currentStockStr.toString().replace('$', '').replace(/,/g, '').trim());
+                  if (!isNaN(parsedStock)) {
+                    currentStock = parsedStock;
+                  }
+                }
+                var newStock = currentStock - soldQty;
+                rawValues[targetIndex][rawStockIdx] = newStock;
+                rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
+              }
             }
           }
         }
       }
       
-      // Append the new rows to the Trade_Log sheet
-      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-      
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Trade log written/edited successfully' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: 'success', 
+        message: 'Trade log written and stock updated in ' + targetSheetName 
+      })).setMimeType(ContentService.MimeType.JSON);
     }
-
-    // 3.5 Action: deleteOrder (Delete matching rows by Order ID in Column M)
+    
+    // 4. Action: deleteOrder (Replenish stock back to raw sheet on order deletion)
     if (action === 'deleteOrder') {
-      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Trade_Log');
-      if (!sheet) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Trade_Log sheet not found' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
+      var rowValuesToReplenish = param.rows; // Array of arrays containing trade rows deleted
       var orderId = param.orderId;
-      if (!orderId) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'No orderId provided' }))
-          .setMimeType(ContentService.MimeType.JSON);
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+      // If orderId is provided, find and gather the rows to delete across trade log sheets
+      var logSheetsToCheck = ['Trade_Log', 'trade_log', '交易記錄', 'Trade_log_admin', 'Trade_Log_admin', 'trade_log_admin'];
+      
+      if (orderId && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
+        rowValuesToReplenish = [];
+        logSheetsToCheck.forEach(function(sName) {
+          var s = ss.getSheetByName(sName);
+          if (s) {
+            var lRow = s.getLastRow();
+            if (lRow > 1) {
+              var vals = s.getRange(1, 1, lRow, 14).getValues();
+              for (var r = 1; r < lRow; r++) {
+                if (vals[r][12] && vals[r][12].toString().trim() === orderId.toString().trim()) {
+                  rowValuesToReplenish.push(vals[r]);
+                }
+              }
+            }
+          }
+        });
       }
 
-      // Revert stock for this order ID before deletion from Trade_Log
-      var deleteMap = {};
-      deleteMap[orderId.toString().trim()] = true;
-      revertStockForOrders(deleteMap);
-      
-      // Ensure the sheet has enough columns to hold our 13-column wide schema
-      var maxCols = sheet.getMaxColumns();
-      if (maxCols < 13) {
-        sheet.insertColumnsAfter(maxCols, 13 - maxCols);
-      }
-      
-      var lastRow = sheet.getLastRow();
-      var deletedCount = 0;
-      if (lastRow > 1) {
-        // Fetch Col M (Column 13) values (from row 2 onwards)
-        var colMValues = sheet.getRange(2, 13, lastRow - 1, 1).getValues();
+      // Replenish stock in 'raw' sheet
+      var rawSheet = ss.getSheetByName('raw');
+      if (rawSheet && rowValuesToReplenish && rowValuesToReplenish.length > 0) {
+        var rawValues = rawSheet.getDataRange().getValues();
+        var rawHeaderRowIdx = 0;
+        var rawTitleIdx = 2;
+        var rawUnlimitedIdx = 27;
+        var rawStockIdx = 28;
         
-        // Iterate backward to avoid row index shifting during deletion
-        for (var r = lastRow; r >= 2; r--) {
-          var cellValue = colMValues[r - 2][0];
-          if (cellValue && cellValue.toString().trim() === orderId.toString().trim()) {
-            sheet.deleteRow(r);
-            deletedCount++;
+        for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
+          var row = rawValues[i];
+          var foundIdx = -1;
+          for (var j = 0; j < row.length; j++) {
+            if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+              foundIdx = j;
+              break;
+            }
+          }
+          if (foundIdx !== -1) {
+            rawHeaderRowIdx = i;
+            rawTitleIdx = foundIdx;
+            for (var j = 0; j < row.length; j++) {
+              var cellStr = (row[j] || '').toString().toLowerCase().trim();
+              var normed = cellStr.replace(/[\s_-]/g, '');
+              if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
+              else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
+            }
+            break;
           }
         }
-      }
-      
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Deleted ' + deletedCount + ' rows for order ID ' + orderId }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
 
-    // 4. Action: updateGrades or Fallback to update grades (when body is raw dictionary of { name: grade })
-    if (action === 'updateGrades' || (!action && Object.keys(param).length > 0)) {
-      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('customer_cat') ||
-                  SpreadsheetApp.getActiveSpreadsheet().getSheetByName('顧客級數');
-      if (!sheet) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'customer_cat or 顧客級數 sheet not found' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      var gradesToUpdate = action === 'updateGrades' ? param.grades : param;
-      var lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
-        // Fetch Col A (Customer Name) values (from row 2 onwards)
-        var nameValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        var gradeRange = sheet.getRange(2, 3, lastRow - 1, 1);
-        var gradeValues = gradeRange.getValues();
-        
-        var updatedCount = 0;
-        for (var idx = 0; idx < nameValues.length; idx++) {
-          var nameCell = nameValues[idx][0];
-          if (nameCell) {
-            var trimmedName = nameCell.toString().trim();
-            if (gradesToUpdate[trimmedName] !== undefined) {
-              gradeValues[idx][0] = gradesToUpdate[trimmedName];
-              updatedCount++;
+        var prodToIndex = {};
+        for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
+          var pName = rawValues[rIdx][rawTitleIdx];
+          if (pName && pName.toString().trim()) {
+            prodToIndex[pName.toString().trim()] = rIdx;
+          }
+        }
+
+        for (var i = 0; i < rowValuesToReplenish.length; i++) {
+          var deletedRow = rowValuesToReplenish[i];
+          if (deletedRow.length < 6) continue;
+          var pName = (deletedRow[1] || '').toString().trim();
+          var colD = deletedRow[3];
+          var colF = deletedRow[5];
+          
+          var returnQty = 0;
+          if (colD !== undefined && colF !== undefined) {
+            var parseVal = function(v) {
+              if (v === undefined || v === null || v === '') return 0;
+              if (typeof v === 'number') return v;
+              var cleaned = v.toString().replace('$', '').replace(/,/g, '').trim();
+              var parsed = parseFloat(cleaned);
+              return isNaN(parsed) ? 0 : parsed;
+            };
+            returnQty = parseVal(colD) * parseVal(colF);
+          }
+
+          if (pName && returnQty > 0) {
+            var targetIndex = prodToIndex[pName];
+            if (targetIndex !== undefined) {
+              var rawRow = rawValues[targetIndex];
+              var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
+              if (!isUnlimited) {
+                var currentStockStr = rawRow[rawStockIdx];
+                var currentStock = 0;
+                if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
+                  var parsedStock = parseFloat(currentStockStr.toString().replace('$', '').replace(/,/g, '').trim());
+                  if (!isNaN(parsedStock)) {
+                    currentStock = parsedStock;
+                  }
+                }
+                var newStock = currentStock + returnQty;
+                rawValues[targetIndex][rawStockIdx] = newStock;
+                rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
+              }
             }
           }
         }
-        
-        if (updatedCount > 0) {
-          gradeRange.setValues(gradeValues);
-        }
-        
-        return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Updated ' + updatedCount + ' customer grades successfully' }))
-          .setMimeType(ContentService.MimeType.JSON);
+      }
+
+      // Delete order rows from sheets
+      var deletedCount = 0;
+      if (orderId) {
+        logSheetsToCheck.forEach(function(sName) {
+          var s = ss.getSheetByName(sName);
+          if (s) {
+            var lastRow = s.getLastRow();
+            if (lastRow > 1) {
+              var colMValues = s.getRange(2, 13, lastRow - 1, 1).getValues();
+              for (var r = lastRow; r >= 2; r--) {
+                var cellValue = colMValues[r - 2][0];
+                if (cellValue && cellValue.toString().trim() === orderId.toString().trim()) {
+                  s.deleteRow(r);
+                  deletedCount++;
+                }
+              }
+            }
+          }
+        });
       }
       
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'No rows to update' }))
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Order rows processed and deleted successfully' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unknown action: ' + action }))
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unknown action: ' + action }))
       .setMimeType(ContentService.MimeType.JSON);
       
-  } catch (error) {
+  } catch(error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -327,31 +425,26 @@ function doPost(e) {
 
 function doGet(e) {
   try {
-    var action = e.parameter.action;
+    var action = e.parameter ? e.parameter.action : null;
     
     // 1. Action: getCustomers
     if (action === 'getCustomers') {
-      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('customer_cat') ||
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('customer_cat') || 
                   SpreadsheetApp.getActiveSpreadsheet().getSheetByName('顧客級數');
       if (!sheet) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'customer_cat or 顧客級數 sheet not found' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
-      var lastRow = sheet.getLastRow();
-      if (lastRow < 2) {
-        return ContentService.createTextOutput(JSON.stringify([]))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      var values = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+      var values = sheet.getDataRange().getValues();
       var customers = [];
-      for (var i = 0; i < values.length; i++) {
+      for (var i = 1; i < values.length; i++) {
         var row = values[i];
         if (row[0]) {
           customers.push({
-            name: row[0].toString().trim(),
-            sales: (row[1] || '').toString().trim(),
-            grade: (row[2] || 'C').toString().trim(),
-            district: (row[3] || '').toString().trim()
+            name: row[0],
+            user: row[1] || "",
+            grade: row[2] || "",
+            district: row[3] || ""
           });
         }
       }
@@ -359,7 +452,7 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     
-    // 2. Action: getProducts (100% live uncached product fetch)
+    // 2. Action: getProducts
     if (action === 'getProducts') {
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
       if (!sheet) {
@@ -384,7 +477,6 @@ function doGet(e) {
       var unlimitedIdx = 27; // Col AB
       var stockIdx = 28; // Col AC
       
-      // Attempt to locate title row and other index headers dynamically
       for (var i = 0; i < Math.min(values.length, 10); i++) {
         var row = values[i];
         var foundIdx = -1;
@@ -401,9 +493,9 @@ function doGet(e) {
           for (var j = 0; j < row.length; j++) {
             var cellStr = (row[j] || '').toString().toLowerCase().trim();
             var normed = cellStr.replace(/[\s_-]/g, '');
-            if (cellStr.indexOf('gold') !== -1) goldIdx = j;
-            else if (cellStr.indexOf('silver') !== -1) silverIdx = j;
-            else if (cellStr.indexOf('basic') !== -1) basicIdx = j;
+            if (cellStr.indexOf('gold') !== -1 || cellStr.indexOf('a價') !== -1 || cellStr.indexOf('a 價') !== -1 || cellStr === 'a' || cellStr === 'a價') goldIdx = j;
+            else if (cellStr.indexOf('silver') !== -1 || cellStr.indexOf('b價') !== -1 || cellStr.indexOf('b 價') !== -1 || cellStr === 'b' || cellStr === 'b價') silverIdx = j;
+            else if (cellStr.indexOf('basic') !== -1 || cellStr.indexOf('c價') !== -1 || cellStr.indexOf('c 價') !== -1 || cellStr === 'c' || cellStr === 'c價') basicIdx = j;
             else if (normed === 'price') priceIdx = j;
             else if (normed === 'discountedprice') discountedPriceIdx = j;
             else if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
@@ -416,49 +508,60 @@ function doGet(e) {
       var parseNum = function(val) {
         if (val === undefined || val === null || val === '') return 0;
         if (typeof val === 'number') return val;
-        var cleaned = val.toString().replace(/[$,\s]/g, '');
+        var cleaned = val.toString().replace('$', '').replace(/,/g, '').trim();
         var parsed = parseFloat(cleaned);
         return isNaN(parsed) ? 0 : parsed;
       };
       
-      var productsMap = {};
       var productsList = [];
       
       for (var rowIdx = headerRowIdx + 1; rowIdx < values.length; rowIdx++) {
         var row = values[rowIdx];
-        var productName = row[titleIdx];
-        if (productName && productName.toString().trim()) {
-          var trimmed = productName.toString().trim();
-          if (trimmed.toLowerCase() === 'title') continue;
-          if (trimmed.length > 1) {
-            
-            var getPrice = function(colIdx) {
-              var val = row[colIdx];
-              if (val !== undefined && val !== null && val.toString().trim() !== '') return parseNum(val);
-              var discounted = row[discountedPriceIdx];
-              if (discounted !== undefined && discounted !== null && discounted.toString().trim() !== '') return parseNum(discounted);
-              return parseNum(row[priceIdx]);
-            };
-            
-            if (!productsMap[trimmed]) {
-              productsMap[trimmed] = true;
-              var isUnlimited = row[unlimitedIdx] !== undefined && row[unlimitedIdx] !== null && row[unlimitedIdx].toString().trim() === '1';
-              var stockVal = undefined;
-              if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
-                stockVal = parseNum(row[stockIdx]);
-              }
-              productsList.push({
-                name: trimmed,
-                prices: {
-                  A: getPrice(goldIdx),
-                  B: getPrice(silverIdx),
-                  C: getPrice(basicIdx)
-                },
-                unlimitedStock: isUnlimited,
-                stock: stockVal
-              });
-            }
+        var name = (row[titleIdx] || "").toString().trim();
+        var sku = (row[1] || "").toString().trim();
+        var id = sku || ("row-" + rowIdx);
+        
+        if (name) {
+          var basePrice = parseNum(row[priceIdx]);
+          var priceA = row[goldIdx] !== undefined && row[goldIdx] !== "" ? parseNum(row[goldIdx]) : basePrice;
+          var priceB = row[silverIdx] !== undefined && row[silverIdx] !== "" ? parseNum(row[silverIdx]) : basePrice;
+          var priceC = row[basicIdx] !== undefined && row[basicIdx] !== "" ? parseNum(row[basicIdx]) : basePrice;
+          
+          var hasStock = true;
+          var alwaysStock = true;
+          var secondaryStockCount = "";
+          
+          if (row[unlimitedIdx] !== undefined && row[unlimitedIdx] !== null) {
+            alwaysStock = row[unlimitedIdx].toString().trim() === "1";
           }
+          
+          if (!alwaysStock) {
+            var sVal = parseNum(row[stockIdx]);
+            secondaryStockCount = sVal.toString();
+            hasStock = sVal > 0;
+          }
+          
+          var merchantRemark = row[29] || "";
+          
+          var product = {
+            id: id,
+            name: name,
+            price: basePrice.toString(),
+            priceA: priceA.toString(),
+            priceB: priceB.toString(),
+            priceC: priceC.toString(),
+            hasStock: hasStock,
+            alwaysStock: alwaysStock,
+            secondaryStockCount: secondaryStockCount,
+            extraAttributes: {
+              "Categories": "Google Sheet Sync",
+              "Merchant Remark": merchantRemark,
+              "remarks": merchantRemark
+            },
+            allValues: row.map(function(cell) { return cell.toString(); })
+          };
+          
+          productsList.push(product);
         }
       }
       
@@ -467,103 +570,8 @@ function doGet(e) {
     }
     
     return ContentService.createTextOutput("Google Apps Script Web App is active and listening.");
-  } catch (error) {
+  } catch(error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-function revertStockForOrders(orderIdsMap) {
-  try {
-    var rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('raw');
-    if (!rawSheet) {
-      rawSheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-    }
-    var tradeLogSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Trade_Log');
-    if (rawSheet && tradeLogSheet) {
-      var rawValues = rawSheet.getDataRange().getValues();
-      var rawHeaderRowIdx = 0;
-      var rawTitleIdx = 2; // Col C default
-      var rawUnlimitedIdx = 27; // Col AB default
-      var rawStockIdx = 28; // Col AC default
-      
-      for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
-        var row = rawValues[i];
-        var foundIdx = -1;
-        for (var j = 0; j < row.length; j++) {
-          if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
-            foundIdx = j;
-            break;
-          }
-        }
-        if (foundIdx !== -1) {
-          rawHeaderRowIdx = i;
-          rawTitleIdx = foundIdx;
-          for (var j = 0; j < row.length; j++) {
-            var cellStr = (row[j] || '').toString().toLowerCase().trim();
-            var normed = cellStr.replace(/[\s_-]/g, '');
-            if (normed.indexOf('unlimitedstock') !== -1) rawUnlimitedIdx = j;
-            else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) rawStockIdx = j;
-          }
-          break;
-        }
-      }
-
-      // Create index of product name to row index
-      var prodToIndex = {};
-      for (var rIdx = rawHeaderRowIdx + 1; rIdx < rawValues.length; rIdx++) {
-        var pName = rawValues[rIdx][rawTitleIdx];
-        if (pName && pName.toString().trim()) {
-          prodToIndex[pName.toString().trim()] = rIdx;
-        }
-      }
-
-      var lastRow = tradeLogSheet.getLastRow();
-      if (lastRow > 1) {
-        var tradeLogValues = tradeLogSheet.getRange(1, 1, lastRow, 13).getValues();
-        // Go through each row of Trade_Log and check if order ID matches (index 12 is M)
-        for (var r = 1; r < lastRow; r++) { // 1-indexed row index but tradeLogValues is 0-indexed
-          var logRow = tradeLogValues[r];
-          if (logRow.length < 13) continue;
-          var orderId = (logRow[12] || '').toString().trim();
-          if (orderId && orderIdsMap[orderId]) {
-            var prodName = (logRow[1] || '').toString().trim();
-            var colD = logRow[3];
-            var colF = logRow[5];
-            
-            var parseVal = function(v) {
-              if (v === undefined || v === null || v === '') return 0;
-              if (typeof v === 'number') return v;
-              var parsed = parseFloat(v.toString().replace(/[$,\s]/g, ''));
-              return isNaN(parsed) ? 0 : parsed;
-            };
-            var revertQty = parseVal(colD) * parseVal(colF);
-            
-            if (prodName && revertQty > 0) {
-              var targetIndex = prodToIndex[prodName];
-              if (targetIndex !== undefined) {
-                var rawRow = rawValues[targetIndex];
-                var isUnlimited = rawRow[rawUnlimitedIdx] !== undefined && rawRow[rawUnlimitedIdx] !== null && rawRow[rawUnlimitedIdx].toString().trim() === '1';
-                if (!isUnlimited) {
-                  var currentStockStr = rawRow[rawStockIdx];
-                  var currentStock = 0;
-                  if (currentStockStr !== undefined && currentStockStr !== null && currentStockStr.toString().trim() !== '') {
-                    var parsedStock = parseFloat(currentStockStr.toString().replace(/[$,\s]/g, ''));
-                    if (!isNaN(parsedStock)) {
-                      currentStock = parsedStock;
-                    }
-                  }
-                  var newStock = currentStock + revertQty;
-                  rawValues[targetIndex][rawStockIdx] = newStock;
-                  rawSheet.getRange(targetIndex + 1, rawStockIdx + 1).setValue(newStock);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error in reverting stock:', err);
   }
 }

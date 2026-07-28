@@ -530,11 +530,13 @@ export const addProductToSheet = async (name: string, username: string): Promise
   }
 };
 
-export const writeTradeLogToSheet = async (rows: any[][]): Promise<boolean> => {
+export const writeTradeLogToSheet = async (rows: any[][], targetSheet: string = 'Trade_Log'): Promise<boolean> => {
   try {
     const payload = {
       action: 'writeTradeLog',
-      rows
+      rows,
+      targetSheet,
+      isAdmin: targetSheet === 'Trade_log_admin'
     };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
