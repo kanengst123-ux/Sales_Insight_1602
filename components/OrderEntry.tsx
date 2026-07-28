@@ -123,10 +123,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     
     customers.forEach(c => {
       const isVisible = selectedRole === 'Admin' 
-        ? ['落鋪', 'HKTVMALL', '其他'].includes(c.name)
-        : c.sales.toUpperCase() === (selectedRole || '').toUpperCase();
+        ? ['落鋪', 'HKTVMALL', '其他'].includes(c?.name || '')
+        : (c?.sales || '').toUpperCase() === (selectedRole || '').toUpperCase();
       
-      if (isVisible && c.district) {
+      if (isVisible && c?.district) {
         if (counts[c.district] !== undefined) {
           counts[c.district]++;
         }
@@ -397,7 +397,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const filteredProducts = useMemo(() => {
     if (!productSearchQuery.trim()) return [];
     const query = productSearchQuery.toLowerCase();
-    return products.filter(p => p.name.toLowerCase().includes(query));
+    return products.filter(p => (p?.name || '').toLowerCase().includes(query));
   }, [products, productSearchQuery]);
 
   const filteredCustomers = useMemo(() => {
@@ -407,25 +407,25 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       const query = searchQuery.toLowerCase();
       return customers
         .filter(c => 
-          c.name.toLowerCase().includes(query) || 
-          (c.sales && c.sales.toLowerCase().includes(query)) ||
-          (c.district && c.district.toLowerCase().includes(query))
+          (c?.name || '').toLowerCase().includes(query) || 
+          (c?.sales && c.sales.toLowerCase().includes(query)) ||
+          (c?.district && c.district.toLowerCase().includes(query))
         )
-        .sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
+        .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', 'zh-HK'));
     }
 
     let baseList: Customer[] = [];
     if (selectedRole === 'Admin') {
-      baseList = customers.filter(c => ['落鋪', 'HKTVMALL', '其他'].includes(c.name));
+      baseList = customers.filter(c => ['落鋪', 'HKTVMALL', '其他'].includes(c?.name || ''));
     } else {
-      baseList = customers.filter(c => c.sales.toUpperCase() === selectedRole.toUpperCase());
+      baseList = customers.filter(c => (c?.sales || '').toUpperCase() === selectedRole.toUpperCase());
     }
 
     if (selectedDistrict) {
-      baseList = baseList.filter(c => c.district === selectedDistrict);
+      baseList = baseList.filter(c => c?.district === selectedDistrict);
     }
 
-    return [...baseList].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
+    return [...baseList].sort((a, b) => (a?.name || '').localeCompare(b?.name || '', 'zh-HK'));
   }, [customers, selectedRole, searchQuery, selectedDistrict]);
 
   const renderModals = () => (

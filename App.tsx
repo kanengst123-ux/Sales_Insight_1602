@@ -608,4 +608,51 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-slate-800 border border-slate-700 p-8 rounded-3xl max-w-md w-full shadow-2xl">
+            <h2 className="text-xl font-bold text-red-400 mb-3">出現錯誤 / App Error</h2>
+            <p className="text-xs text-slate-300 mb-6 bg-slate-950 p-3 rounded-xl font-mono overflow-auto max-h-32 text-left">
+              {this.state.error?.message || 'Unknown error'}
+            </p>
+            <button
+              onClick={() => {
+                localStorage.removeItem('ws_selected_role');
+                window.location.reload();
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-6 rounded-2xl font-bold text-sm transition-all"
+            >
+              重置並重新載入 / Reset & Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const AppWithErrorBoundary: React.FC = () => (
+  <AppErrorBoundary>
+    <App />
+  </AppErrorBoundary>
+);
+
+export default AppWithErrorBoundary;
