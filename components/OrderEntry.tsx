@@ -122,13 +122,20 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     districts.forEach(d => counts[d] = 0);
     
     customers.forEach(c => {
+      const cSales = (c?.sales || (c as any)?.user || '').toString().trim().toUpperCase();
       const isVisible = selectedRole === 'Admin' 
         ? ['落鋪', 'HKTVMALL', '其他'].includes(c?.name || '')
-        : (c?.sales || '').toUpperCase() === (selectedRole || '').toUpperCase();
+        : cSales === (selectedRole || '').toUpperCase();
       
       if (isVisible && c?.district) {
-        if (counts[c.district] !== undefined) {
-          counts[c.district]++;
+        const dist = c.district.trim();
+        if (counts[dist] !== undefined) {
+          counts[dist]++;
+        } else {
+          const matched = districts.find(d => dist.includes(d) || d.includes(dist));
+          if (matched) {
+            counts[matched]++;
+          }
         }
       }
     });
@@ -406,11 +413,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       return customers
-        .filter(c => 
-          (c?.name || '').toLowerCase().includes(query) || 
-          (c?.sales && c.sales.toLowerCase().includes(query)) ||
-          (c?.district && c.district.toLowerCase().includes(query))
-        )
+        .filter(c => {
+          const cSales = (c?.sales || (c as any)?.user || '').toString();
+          return (c?.name || '').toLowerCase().includes(query) || 
+            cSales.toLowerCase().includes(query) ||
+            (c?.district && c.district.toLowerCase().includes(query));
+        })
         .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', 'zh-HK'));
     }
 
@@ -418,11 +426,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     if (selectedRole === 'Admin') {
       baseList = customers.filter(c => ['落鋪', 'HKTVMALL', '其他'].includes(c?.name || ''));
     } else {
-      baseList = customers.filter(c => (c?.sales || '').toUpperCase() === selectedRole.toUpperCase());
+      baseList = customers.filter(c => {
+        const cSales = (c?.sales || (c as any)?.user || '').toString().trim().toUpperCase();
+        return cSales === selectedRole.toUpperCase();
+      });
     }
 
     if (selectedDistrict) {
-      baseList = baseList.filter(c => c?.district === selectedDistrict);
+      baseList = baseList.filter(c => {
+        if (!c?.district) return false;
+        const dist = c.district.trim();
+        return dist === selectedDistrict || dist.includes(selectedDistrict) || selectedDistrict.includes(dist);
+      });
     }
 
     return [...baseList].sort((a, b) => (a?.name || '').localeCompare(b?.name || '', 'zh-HK'));
@@ -1217,8 +1232,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         c.grade === 'B' ? 'bg-slate-100 text-slate-600' :
                         'bg-orange-100 text-orange-700'
                       }`}>Grade {c.grade}</span>
-                      {(selectedRole === 'Admin' || searchQuery.trim()) && c.sales && (
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales}{c.district ? ` (${c.district})` : ''}</p>
+                      {(selectedRole === 'Admin' || searchQuery.trim()) && (c.sales || (c as any).user) && (
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales || (c as any).user}{c.district ? ` (${c.district})` : ''}</p>
                       )}
                     </div>
                   </div>

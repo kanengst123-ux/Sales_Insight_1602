@@ -442,6 +442,7 @@ function doGet(e) {
         if (row[0]) {
           customers.push({
             name: row[0],
+            sales: row[1] || "",
             user: row[1] || "",
             grade: row[2] || "",
             district: row[3] || ""

@@ -46,7 +46,10 @@ const CustomerGrades: React.FC<CustomerGradesProps> = ({ onCustomerAdded }) => {
     const salesFilter = selectedSales.toUpperCase();
     
     // 1. Filter by sales person
-    const filtered = data.filter(item => (item?.sales || '').toUpperCase() === salesFilter);
+    const filtered = data.filter(item => {
+      const salesVal = (item?.sales || (item as any)?.user || '').toString().trim().toUpperCase();
+      return salesVal === salesFilter;
+    });
     
     // 2. Sort the data
     return filtered.sort((a, b) => {

@@ -82,6 +82,44 @@ const parseNum = (val: any): number => {
   return isNaN(parsed) ? 0 : parsed;
 };
 
+export const DEFAULT_CUSTOMERS: Customer[] = [
+  { name: 'TechFlow Solutions', grade: 'A', district: '九龍東', sales: 'EVA' },
+  { name: 'Sarah Jenkins', grade: 'B', district: '港島', sales: 'KATIE' },
+  { name: 'Urban Outfitters', grade: 'A', district: '新界東', sales: 'YO' },
+  { name: 'BuildIt Inc', grade: 'B', district: '九龍西', sales: 'KASEY' },
+  { name: 'Global Logistics', grade: 'A', district: '港島', sales: 'EVA' },
+  { name: 'Mike Ross', grade: 'C', district: '新界西', sales: 'KATIE' },
+  { name: 'Aura Design', grade: 'B', district: '九龍東', sales: 'YO' },
+  { name: 'Zenith Corp', grade: 'A', district: '港島', sales: 'KASEY' },
+  { name: 'City Library', grade: 'C', district: '新界東', sales: 'EVA' },
+  { name: 'Coffee House', grade: 'B', district: '九龍西', sales: 'KATIE' },
+  { name: '落鋪', grade: 'A', district: '九龍東', sales: 'Admin' },
+  { name: 'HKTVMALL', grade: 'A', district: '九龍東', sales: 'Admin' },
+  { name: '其他', grade: 'A', district: '九龍東', sales: 'Admin' }
+];
+
+export const DEFAULT_PRODUCTS: Product[] = [
+  { id: 'PROD-001', name: 'MacBook Pro 14"', price: 2499, prices: { A: 2200, B: 2350, C: 2499 }, unlimitedStock: true, stock: 100 },
+  { id: 'PROD-002', name: 'Dell XPS 15', price: 1899, prices: { A: 1650, B: 1750, C: 1899 }, unlimitedStock: true, stock: 50 },
+  { id: 'PROD-003', name: 'ThinkPad X1', price: 1599, prices: { A: 1400, B: 1500, C: 1599 }, unlimitedStock: true, stock: 40 },
+  { id: 'PROD-004', name: '4K Studio Display', price: 1299, prices: { A: 1100, B: 1200, C: 1299 }, unlimitedStock: true, stock: 30 },
+  { id: 'PROD-005', name: 'Pro Tablet 11', price: 799, prices: { A: 700, B: 750, C: 799 }, unlimitedStock: true, stock: 25 },
+  { id: 'PROD-006', name: 'Wireless Keyboard', price: 99, prices: { A: 80, B: 90, C: 99 }, unlimitedStock: true, stock: 200 },
+  { id: 'PROD-007', name: '2TB External SSD', price: 199, prices: { A: 160, B: 180, C: 199 }, unlimitedStock: true, stock: 150 },
+  { id: 'PROD-008', name: 'Router AX6000', price: 299, prices: { A: 250, B: 275, C: 299 }, unlimitedStock: true, stock: 60 },
+  { id: 'PROD-009', name: 'ErgoDesk Chair', price: 350, prices: { A: 280, B: 315, C: 350 }, unlimitedStock: true, stock: 80 },
+  { id: 'PROD-010', name: 'Oak Writing Desk', price: 850, prices: { A: 720, B: 780, C: 850 }, unlimitedStock: true, stock: 20 },
+  { id: 'PROD-011', name: 'Metal Bookcase', price: 450, prices: { A: 380, B: 410, C: 450 }, unlimitedStock: true, stock: 35 },
+  { id: 'PROD-012', name: 'Floor Lamp', price: 120, prices: { A: 95, B: 110, C: 120 }, unlimitedStock: true, stock: 90 },
+  { id: 'PROD-013', name: 'Gaming Throne', price: 499, prices: { A: 420, B: 460, C: 499 }, unlimitedStock: true, stock: 15 },
+  { id: 'PROD-014', name: 'Bean Bags', price: 80, prices: { A: 65, B: 72, C: 80 }, unlimitedStock: true, stock: 100 },
+  { id: 'PROD-015', name: 'Heavy Duty Drill', price: 180, prices: { A: 145, B: 160, C: 180 }, unlimitedStock: true, stock: 75 },
+  { id: 'PROD-016', name: 'Bulk Coffee Beans', price: 250, prices: { A: 200, B: 225, C: 250 }, unlimitedStock: true, stock: 300 },
+  { id: 'PROD-017', name: 'Summer Collection Bulk', price: 1200, prices: { A: 1000, B: 1100, C: 1200 }, unlimitedStock: true, stock: 50 },
+  { id: 'PROD-018', name: 'Leather Belts', price: 45, prices: { A: 35, B: 40, C: 45 }, unlimitedStock: true, stock: 500 },
+  { id: 'PROD-019', name: 'Helmet Pack', price: 300, prices: { A: 240, B: 270, C: 300 }, unlimitedStock: true, stock: 40 }
+];
+
 export const fetchCustomerGrades = async (): Promise<Customer[]> => {
   try {
     // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
@@ -90,9 +128,14 @@ export const fetchCustomerGrades = async (): Promise<Customer[]> => {
       const res = await fetch(liveUrl, { method: 'GET' });
       if (res.ok) {
         const json = await res.json();
-        if (Array.isArray(json)) {
+        if (Array.isArray(json) && json.length > 0) {
           console.log('Successfully fetched live customer list, count:', json.length);
-          return json;
+          return json.map((item: any) => ({
+            name: item.name || '',
+            sales: item.sales || item.user || '',
+            grade: (item.grade || 'C') as 'A' | 'B' | 'C',
+            district: item.district || ''
+          })).filter((c: Customer) => c.name.trim() !== '');
         }
       }
     }
@@ -108,18 +151,22 @@ export const fetchCustomerGrades = async (): Promise<Customer[]> => {
     if (!response.ok) throw new Error('Failed to fetch customer grades');
     const text = await response.text();
     const rows = parseCSV(text);
-    if (rows.length < 2) return [];
-
-    return rows.slice(1).map(row => ({
-      name: row[0] || '',
-      sales: row[1] || '',
-      grade: (row[2] || 'C') as 'A' | 'B' | 'C',
-      district: row[3] || ''
-    }));
+    if (rows.length >= 2) {
+      const loaded = rows.slice(1).map(row => ({
+        name: row[0] || '',
+        sales: row[1] || '',
+        grade: (row[2] || 'C') as 'A' | 'B' | 'C',
+        district: row[3] || ''
+      })).filter(c => c.name.trim() !== '');
+      if (loaded.length > 0) {
+        return loaded;
+      }
+    }
   } catch (error) {
-    console.error('Error fetching customer grades:', error);
-    return [];
+    console.warn('Unable to fetch customer grades CSV, using default list:', error);
   }
+
+  return DEFAULT_CUSTOMERS;
 };
 
 export const fetchSalesData = async (customId?: string): Promise<{ data: SalesData; source: 'cloud' | 'local' }> => {
@@ -343,7 +390,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
       }
     }
   } catch (csvError) {
-    console.error('Error fetching/parsing CSV fallback for stocks:', csvError);
+    console.warn('CSV fallback for stocks unavailable, proceeding with defaults:', csvError);
   }
 
   try {
@@ -353,7 +400,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
       const res = await fetch(liveUrl, { method: 'GET' });
       if (res.ok) {
         const json = await res.json();
-        if (Array.isArray(json)) {
+        if (Array.isArray(json) && json.length > 0) {
           console.log('Successfully fetched live product list, count:', json.length);
           // Enrich GAS products with stock information from published CSV tab if missing/undefined
           const enriched: Product[] = json.map((p: any) => {
@@ -381,98 +428,102 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     if (!response.ok) throw new Error('Master sheet fetch failed');
     const text = await response.text();
     const rows = parseCSV(text);
-    if (rows.length < 1) return [];
-    
-    // Find the header row (usually 0, but scan just in case)
-    let headerRowIdx = 0;
-    let titleIdx = 2; // Col C is Title
-    let productIdIdx = 1; // Col B is Product ID
-    let goldIdx = 17; // Col R
-    let silverIdx = 18; // Col S
-    let basicIdx = 19; // Col T
-    let priceIdx = 14; // Col O
-    let discountedPriceIdx = 15; // Col P
-    let unlimitedStockIdx = 27; // Col AB (default index 27)
-    let stockIdx = 28; // Col AC (default index 28)
-    
-    for (let i = 0; i < Math.min(rows.length, 10); i++) {
-      const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
-      if (idx !== -1) {
-        headerRowIdx = i;
-        titleIdx = idx;
-        const pIdIdx = rows[i].findIndex(cell => {
-          const cellStr = (cell || '').toLowerCase().trim();
-          return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
-        });
-        if (pIdIdx !== -1) productIdIdx = pIdIdx;
-        // Verify other indices based on actual headers if possible
-        const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
-        if (rIdx !== -1) goldIdx = rIdx;
-        const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
-        if (sIdx !== -1) silverIdx = sIdx;
-        const tIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('basic'));
-        if (tIdx !== -1) basicIdx = tIdx;
-        const pIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'price');
-        if (pIdx !== -1) priceIdx = pIdx;
-        const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
-        if (dpIdx !== -1) discountedPriceIdx = dpIdx;
-        const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
-        if (uIdx !== -1) unlimitedStockIdx = uIdx;
-        const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
-        if (stIdx !== -1) stockIdx = stIdx;
-        break;
-      }
-    }
-
-    const productMap = new Map<string, Product>();
-    rows.slice(headerRowIdx + 1).forEach(row => {
-      const productName = row[titleIdx];
-      if (productName && productName.trim()) {
-        const trimmed = productName.trim();
-        // Skip header if it repeated or invalid titles
-        if (trimmed.toLowerCase() === 'title') return;
-        
-        const getPrice = (idx: number) => {
-          const val = row[idx];
-          if (val && val.trim() !== '') return parseNum(val);
-          
-          const discounted = row[discountedPriceIdx];
-          if (discounted && discounted.trim() !== '') return parseNum(discounted);
-          
-          return parseNum(row[priceIdx]);
-        };
-
-        const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
-        const prodId = row[productIdIdx]?.toString().trim() || '';
-        let stockVal: number | undefined = undefined;
-        if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
-          stockVal = parseNum(row[stockIdx]);
+    if (rows.length > 0) {
+      // Find the header row (usually 0, but scan just in case)
+      let headerRowIdx = 0;
+      let titleIdx = 2; // Col C is Title
+      let productIdIdx = 1; // Col B is Product ID
+      let goldIdx = 17; // Col R
+      let silverIdx = 18; // Col S
+      let basicIdx = 19; // Col T
+      let priceIdx = 14; // Col O
+      let discountedPriceIdx = 15; // Col P
+      let unlimitedStockIdx = 27; // Col AB (default index 27)
+      let stockIdx = 28; // Col AC (default index 28)
+      
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
+        if (idx !== -1) {
+          headerRowIdx = i;
+          titleIdx = idx;
+          const pIdIdx = rows[i].findIndex(cell => {
+            const cellStr = (cell || '').toLowerCase().trim();
+            return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
+          });
+          if (pIdIdx !== -1) productIdIdx = pIdIdx;
+          // Verify other indices based on actual headers if possible
+          const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
+          if (rIdx !== -1) goldIdx = rIdx;
+          const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
+          if (sIdx !== -1) silverIdx = sIdx;
+          const tIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('basic'));
+          if (tIdx !== -1) basicIdx = tIdx;
+          const pIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'price');
+          if (pIdx !== -1) priceIdx = pIdx;
+          const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
+          if (dpIdx !== -1) discountedPriceIdx = dpIdx;
+          const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
+          if (uIdx !== -1) unlimitedStockIdx = uIdx;
+          const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
+          if (stIdx !== -1) stockIdx = stIdx;
+          break;
         }
+      }
 
-        // Filter out very short or numeric-only strings if they aren't products
-        if (trimmed.length > 1) {
-          if (!productMap.has(trimmed)) {
-            productMap.set(trimmed, {
-              id: prodId,
-              name: trimmed,
-              prices: {
-                A: getPrice(goldIdx),
-                B: getPrice(silverIdx),
-                C: getPrice(basicIdx)
-              },
-              unlimitedStock: isUnlimited,
-              stock: stockVal
-            });
+      const productMap = new Map<string, Product>();
+      rows.slice(headerRowIdx + 1).forEach(row => {
+        const productName = row[titleIdx];
+        if (productName && productName.trim()) {
+          const trimmed = productName.trim();
+          // Skip header if it repeated or invalid titles
+          if (trimmed.toLowerCase() === 'title') return;
+          
+          const getPrice = (idx: number) => {
+            const val = row[idx];
+            if (val && val.trim() !== '') return parseNum(val);
+            
+            const discounted = row[discountedPriceIdx];
+            if (discounted && discounted.trim() !== '') return parseNum(discounted);
+            
+            return parseNum(row[priceIdx]);
+          };
+
+          const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+          const prodId = row[productIdIdx]?.toString().trim() || '';
+          let stockVal: number | undefined = undefined;
+          if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
+            stockVal = parseNum(row[stockIdx]);
+          }
+
+          // Filter out very short or numeric-only strings if they aren't products
+          if (trimmed.length > 1) {
+            if (!productMap.has(trimmed)) {
+              productMap.set(trimmed, {
+                id: prodId,
+                name: trimmed,
+                prices: {
+                  A: getPrice(goldIdx),
+                  B: getPrice(silverIdx),
+                  C: getPrice(basicIdx)
+                },
+                unlimitedStock: isUnlimited,
+                stock: stockVal
+              });
+            }
           }
         }
+      });
+      
+      const loadedProducts = Array.from(productMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      if (loadedProducts.length > 0) {
+        return loadedProducts;
       }
-    });
-    
-    return Array.from(productMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
   } catch (error) {
-    console.error('Error fetching products:', error);
-    return [];
+    console.warn('Unable to fetch product list from CSV, using default list:', error);
   }
+
+  return DEFAULT_PRODUCTS;
 };
 
 export const addCustomerToSheet = async (name: string, user: string, district: string, grade: 'A' | 'B' | 'C'): Promise<boolean> => {
