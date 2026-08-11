@@ -226,7 +226,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       }
     });
 
-    return Math.max(0, baseStock - reducedQty);
+    return baseStock - reducedQty;
   };
 
   const getProductStockLimit = (productName: string) => {
@@ -250,16 +250,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
         });
       });
     }
-    return Math.max(0, (prod.stock ?? 0) - reducedQty);
+    return (prod.stock ?? 0) - reducedQty;
   };
 
   const handleAddProduct = (product: Product) => {
     const remaining = getRemainingStock(product);
     const isUnlimited = !!product.unlimitedStock;
-    if (!isUnlimited && remaining <= 0) {
-      alert('該產品已無庫存！');
-      return;
-    }
 
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
@@ -279,12 +275,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
 
     const defaultQty = isSpecialNegativeProduct ? -1 : (boxInfo ? boxInfo.units : 12);
-    const qtyToAdd = isSpecialNegativeProduct ? -1 : (isUnlimited ? defaultQty : Math.min(defaultQty, remaining));
+    const qtyToAdd = defaultQty;
 
     const newItem: OrderItem = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: product.name,
-      // Default to 1 outer (either parsed or fallback 12) per user request (capped by remaining stock)
+      // Default to 1 outer (either parsed or fallback 12) per user request
       quantity: qtyToAdd,
       price: tieredPrice,
       isOuterBox: isSpecialNegativeProduct ? false : true, // Start in unit mode for special products, outer mode for others
@@ -298,13 +294,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const handleUpdateItem = (id: string, updates: Partial<OrderItem>) => {
     setSelectedItems(prev => prev.map(item => {
       if (item.id === id) {
-        const merged = { ...item, ...updates };
-        const limit = getProductStockLimit(item.name);
-        if (merged.quantity > limit) {
-          merged.quantity = limit;
-          alert(`庫存不足！該產品最大可用庫存爲 ${limit}`);
-        }
-        return merged;
+        return { ...item, ...updates };
       }
       return item;
     }));
@@ -698,10 +688,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                     return (
                       <div
                         key={idx}
-                        onClick={() => !isOutOfStock && handleAddProduct(p)}
-                        className={`w-full flex items-center justify-between p-3 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer ${
-                          isOutOfStock ? 'opacity-50 hover:bg-transparent cursor-not-allowed' : 'hover:bg-blue-50'
-                        }`}
+                        onClick={() => handleAddProduct(p)}
+                        className="w-full flex items-center justify-between p-3 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer hover:bg-blue-50"
                       >
                         <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
                           <button
@@ -716,20 +704,16 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                             <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
                           </button>
                           <div className="flex flex-col min-w-0">
-                            <span className={`text-[11px] font-bold leading-snug break-words ${
-                              isOutOfStock ? 'text-slate-400' : 'text-slate-700 group-hover:text-blue-700'
-                            }`}>{p.name}</span>
+                            <span className="text-[11px] font-bold leading-snug break-words text-slate-700 group-hover:text-blue-700">{p.name}</span>
                             <span className={`text-[9px] font-semibold mt-0.5 ${
-                              isOutOfStock ? 'text-red-500' : (remaining < 10 && !isUnlimited) ? 'text-amber-600' : 'text-slate-400'
+                              isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
                             }`}>
-                              {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '庫存: 已售罄' : `剩餘庫存: ${remaining}`}
+                              {isUnlimited ? '庫存: 無限制' : `剩餘庫存: ${remaining}${isOutOfStock ? ' (缺貨)' : ''}`}
                             </span>
                           </div>
                         </div>
-                        <div className={`p-1 rounded-lg transition-colors ${
-                          isOutOfStock ? 'bg-slate-50' : 'bg-slate-100 group-hover:bg-blue-100'
-                        }`}>
-                          <Plus className={`w-3 h-3 ${isOutOfStock ? 'text-slate-200' : 'text-slate-400 group-hover:text-blue-500'}`} />
+                        <div className="p-1 rounded-lg transition-colors bg-slate-100 group-hover:bg-blue-100">
+                          <Plus className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
                         </div>
                       </div>
                     );
@@ -1052,26 +1036,20 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                  <Star className="w-3.5 h-3.5 fill-current" />
                                </button>
                                <div className="flex flex-col min-w-0 align-left text-left">
-                                 <span className={`text-[11px] font-bold leading-snug truncate ${
-                                   (!p.unlimitedStock && getRemainingStock(p) <= 0) ? 'text-slate-400' : 'text-slate-700'
-                                 }`}>{p.name}</span>
+                                 <span className="text-[11px] font-bold leading-snug truncate text-slate-700">{p.name}</span>
                                  <span className={`text-[9px] font-semibold mt-0.5 ${
-                                   (!p.unlimitedStock && getRemainingStock(p) <= 0) 
-                                     ? 'text-red-500' 
-                                     : getRemainingStock(p) < 10 && !p.unlimitedStock 
-                                       ? 'text-amber-600' 
-                                       : 'text-slate-400'
+                                   p.unlimitedStock ? 'text-slate-400' : getRemainingStock(p) <= 0 ? 'text-rose-600' : getRemainingStock(p) < 10 ? 'text-amber-600' : 'text-slate-400'
                                  }`}>
-                                   {p.unlimitedStock ? '庫存: 無限制' : getRemainingStock(p) <= 0 ? '庫存: 已售罄' : `剩餘庫存: ${getRemainingStock(p)}`}
+                                   {p.unlimitedStock ? '庫存: 無限制' : `剩餘庫存: ${getRemainingStock(p)}${getRemainingStock(p) <= 0 ? ' (缺貨)' : ''}`}
                                  </span>
                                </div>
                              </div>
                              <button
                                onClick={() => {
-                                 if (!p.unlimitedStock && getRemainingStock(p) <= 0) { alert('該產品已無庫存！'); return; } handleAddProduct(p);
+                                 handleAddProduct(p);
                                  setActiveTab('order');
                                }}
-                               className={`p-1.5 rounded-lg active:scale-95 transition-all flex-shrink-0 text-white ${(!p.unlimitedStock && getRemainingStock(p) <= 0) ? "bg-slate-100 text-slate-300 cursor-not-allowed shadow-none active:scale-100" : "bg-blue-600 shadow-lg shadow-blue-600/20"}`}
+                               className="p-1.5 rounded-lg active:scale-95 transition-all flex-shrink-0 text-white bg-blue-600 shadow-lg shadow-blue-600/20"
                              >
                                <Plus className="w-3 h-3" />
                              </button>
