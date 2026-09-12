@@ -405,8 +405,18 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           // Enrich GAS products with stock information from published CSV tab if missing/undefined
           const enriched: Product[] = json.map((p: any) => {
             const csvData = csvProductsMap.get(p.name);
+            const numPrice = parseNum(p.price);
+            const priceA = p.priceA !== undefined && p.priceA !== '' ? parseNum(p.priceA) : (p.prices?.A !== undefined ? parseNum(p.prices.A) : numPrice);
+            const priceB = p.priceB !== undefined && p.priceB !== '' ? parseNum(p.priceB) : (p.prices?.B !== undefined ? parseNum(p.prices.B) : numPrice);
+            const priceC = p.priceC !== undefined && p.priceC !== '' ? parseNum(p.priceC) : (p.prices?.C !== undefined ? parseNum(p.prices.C) : numPrice);
             return {
               ...p,
+              price: numPrice,
+              prices: {
+                A: priceA,
+                B: priceB,
+                C: priceC
+              },
               id: p.id !== undefined ? p.id : (csvData ? csvData.id : undefined),
               unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined)

@@ -547,10 +547,15 @@ function doGet(e) {
           var product = {
             id: id,
             name: name,
-            price: basePrice.toString(),
-            priceA: priceA.toString(),
-            priceB: priceB.toString(),
-            priceC: priceC.toString(),
+            price: basePrice,
+            priceA: priceA,
+            priceB: priceB,
+            priceC: priceC,
+            prices: {
+              A: priceA,
+              B: priceB,
+              C: priceC
+            },
             hasStock: hasStock,
             alwaysStock: alwaysStock,
             secondaryStockCount: secondaryStockCount,

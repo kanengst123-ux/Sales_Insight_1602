@@ -260,7 +260,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
     const grade = selectedCustomerInfo?.grade || 'C';
-    let tieredPrice = product.prices ? product.prices[grade] : (product.price || 0);
+    let rawTieredPrice: any = 0;
+    if (product.prices && product.prices[grade] !== undefined && product.prices[grade] !== null && (product.prices[grade] as any) !== '') {
+      rawTieredPrice = product.prices[grade];
+    } else if ((product as any)[`price${grade}`] !== undefined) {
+      rawTieredPrice = (product as any)[`price${grade}`];
+    } else {
+      rawTieredPrice = product.price || 0;
+    }
+    let tieredPrice = typeof rawTieredPrice === 'number'
+      ? rawTieredPrice
+      : (parseFloat(String(rawTieredPrice).replace(/[^0-9.-]/g, '')) || 0);
 
     const isSpecialNegativeProduct = 
       product.name.includes('上單收多$') || 
@@ -294,7 +304,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const handleUpdateItem = (id: string, updates: Partial<OrderItem>) => {
     setSelectedItems(prev => prev.map(item => {
       if (item.id === id) {
-        return { ...item, ...updates };
+        const merged = { ...item, ...updates };
+        if (merged.price !== undefined) {
+          merged.price = typeof merged.price === 'number'
+            ? merged.price
+            : (parseFloat(String(merged.price).replace(/[^0-9.-]/g, '')) || 0);
+        }
+        if (merged.quantity !== undefined) {
+          merged.quantity = typeof merged.quantity === 'number'
+            ? merged.quantity
+            : (parseFloat(String(merged.quantity)) || 0);
+        }
+        return merged;
       }
       return item;
     }));
@@ -890,9 +911,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                   <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden w-20 flex-shrink-0">
                                     <button 
                                       onClick={() => {
-                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (item.unitsPerBox || 1) : 1;
+                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
                                         const isSpecial = item.name.includes("上單收多$") || item.name.includes("扣上單");
-                                        handleUpdateItem(item.id, { quantity: isSpecial ? (item.quantity - step) : Math.max(0, item.quantity - step) });
+                                        const curQty = Number(item.quantity) || 0;
+                                        handleUpdateItem(item.id, { quantity: isSpecial ? (curQty - step) : (curQty - step) });
                                       }}
                                       className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
                                     >
@@ -906,8 +928,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                     />
                                     <button 
                                       onClick={() => {
-                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (item.unitsPerBox || 1) : 1;
-                                        handleUpdateItem(item.id, { quantity: item.quantity + step });
+                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
+                                        const curQty = Number(item.quantity) || 0;
+                                        handleUpdateItem(item.id, { quantity: curQty + step });
                                       }}
                                       className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
                                     >
@@ -920,7 +943,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                       <button 
                                         type="button"
                                         onClick={() => {
-                                          const currentPrice = tempPrices[item.id] !== undefined ? (parseFloat(tempPrices[item.id]) || 0) : item.price;
+                                          const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
+                                          const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
                                           const newPrice = Math.round((currentPrice - 1) * 100) / 100;
                                           handleUpdateItem(item.id, { price: newPrice });
                                           setTempPrices(prev => {
@@ -950,6 +974,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                             }
                                           }}
                                           onBlur={() => {
+                                            if (tempPrices[item.id] !== undefined) {
+                                              const parsed = parseFloat(tempPrices[item.id]);
+                                              if (!isNaN(parsed)) {
+                                                handleUpdateItem(item.id, { price: parsed });
+                                              }
+                                            }
                                             setTempPrices(prev => {
                                               const copy = { ...prev };
                                               delete copy[item.id];
@@ -963,7 +993,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                       <button 
                                         type="button"
                                         onClick={() => {
-                                          const currentPrice = tempPrices[item.id] !== undefined ? (parseFloat(tempPrices[item.id]) || 0) : item.price;
+                                          const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
+                                          const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
                                           const newPrice = Math.round((currentPrice + 1) * 100) / 100;
                                           handleUpdateItem(item.id, { price: newPrice });
                                           setTempPrices(prev => {
