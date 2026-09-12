@@ -705,7 +705,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   filteredProducts.map((p, idx) => {
                     const remaining = getRemainingStock(p);
                     const isUnlimited = !!p.unlimitedStock;
-                    const isOutOfStock = !isUnlimited && remaining <= 0;
+                    const isNegative = !isUnlimited && remaining < 0;
+                    const isZero = !isUnlimited && remaining === 0;
                     return (
                       <div
                         key={idx}
@@ -727,9 +728,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           <div className="flex flex-col min-w-0">
                             <span className="text-[11px] font-bold leading-snug break-words text-slate-700 group-hover:text-blue-700">{p.name}</span>
                             <span className={`text-[9px] font-semibold mt-0.5 ${
-                              isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
+                              isUnlimited ? 'text-slate-400' : isNegative ? 'text-rose-600 font-bold' : isZero ? 'text-amber-600 font-bold' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
                             }`}>
-                              {isUnlimited ? '庫存: 無限制' : `剩餘庫存: ${remaining}${isOutOfStock ? ' (缺貨)' : ''}`}
+                              {isUnlimited ? '庫存: 無限制' : isNegative ? `剩餘庫存: ${remaining} (負數庫存，可落單)` : isZero ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${remaining}`}
                             </span>
                           </div>
                         </div>
@@ -879,7 +880,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                    >
                                      <Star className={`w-3.5 h-3.5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
                                    </button>
-                                   <h5 className="text-[11px] font-black text-slate-900 leading-tight truncate">{item.name}</h5>
+                                   <div className="flex flex-col min-w-0">
+                                     <h5 className="text-[11px] font-black text-slate-900 leading-tight truncate">{item.name}</h5>
+                                     {(() => {
+                                       const prod = products.find(p => p.name === item.name);
+                                       if (!prod || prod.unlimitedStock) return null;
+                                       const rem = getRemainingStock(prod);
+                                       return (
+                                         <span className={`text-[9px] font-medium mt-0.5 ${rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                                           {rem < 0 ? `剩餘庫存: ${rem} (負數庫存)` : rem === 0 ? '剩餘庫存: 0 (缺貨)' : `剩餘庫存: ${rem}`}
+                                         </span>
+                                       );
+                                     })()}
+                                   </div>
                                  </div>
                                  {item.unitsPerBox && (
                                    <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
@@ -1068,11 +1081,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                </button>
                                <div className="flex flex-col min-w-0 align-left text-left">
                                  <span className="text-[11px] font-bold leading-snug truncate text-slate-700">{p.name}</span>
-                                 <span className={`text-[9px] font-semibold mt-0.5 ${
-                                   p.unlimitedStock ? 'text-slate-400' : getRemainingStock(p) <= 0 ? 'text-rose-600' : getRemainingStock(p) < 10 ? 'text-amber-600' : 'text-slate-400'
-                                 }`}>
-                                   {p.unlimitedStock ? '庫存: 無限制' : `剩餘庫存: ${getRemainingStock(p)}${getRemainingStock(p) <= 0 ? ' (缺貨)' : ''}`}
-                                 </span>
+                                 {(() => {
+                                   if (p.unlimitedStock) {
+                                     return <span className="text-[9px] font-semibold mt-0.5 text-slate-400">庫存: 無限制</span>;
+                                   }
+                                   const rem = getRemainingStock(p);
+                                   return (
+                                     <span className={`text-[9px] font-semibold mt-0.5 ${
+                                       rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-amber-600 font-bold' : rem < 10 ? 'text-amber-600' : 'text-slate-400'
+                                     }`}>
+                                       {rem < 0 ? `剩餘庫存: ${rem} (負數庫存，可落單)` : rem === 0 ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${rem}`}
+                                     </span>
+                                   );
+                                 })()}
                                </div>
                              </div>
                              <button

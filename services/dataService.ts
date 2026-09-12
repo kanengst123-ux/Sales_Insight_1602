@@ -1,8 +1,27 @@
 
 import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
+import { getCachedItem, setCachedItem } from './cacheService';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
 export const UPDATE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJBpLD4XstIGc_47V4ys3WYr_OX5vfsc36u5aEIsAyv06wYDWT_FFuAooQVMt1Pq8R/exec';
+
+export const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 8000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+};
 
 const getExportUrl = (id: string) => {
   const sheetId = id.includes('docs.google.com') 
@@ -121,49 +140,71 @@ export const DEFAULT_PRODUCTS: Product[] = [
 ];
 
 export const fetchCustomerGrades = async (): Promise<Customer[]> => {
-  try {
-    // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
-    if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
-      const liveUrl = `${UPDATE_SCRIPT_URL}?action=getCustomers&t=${Date.now()}`;
-      const res = await fetch(liveUrl, { method: 'GET' });
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json) && json.length > 0) {
-          console.log('Successfully fetched live customer list, count:', json.length);
-          return json.map((item: any) => ({
-            name: item.name || '',
-            sales: item.sales || item.user || '',
-            grade: (item.grade || 'C') as 'A' | 'B' | 'C',
-            district: item.district || ''
-          })).filter((c: Customer) => c.name.trim() !== '');
-        }
-      }
-    }
-  } catch (liveError) {
-    console.warn('Unable to fetch live grades from GAS, falling back to published CSV:', liveError);
-  }
-
-  // 2. Fallback to published CSV if GAS is unavailable/fails
-  const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
-  const cacheBuster = `&t=${Date.now()}`;
-  try {
-    const response = await fetch(URL + cacheBuster);
-    if (!response.ok) throw new Error('Failed to fetch customer grades');
-    const text = await response.text();
+  const parseCustomersCSV = (text: string): Customer[] => {
     const rows = parseCSV(text);
     if (rows.length >= 2) {
-      const loaded = rows.slice(1).map(row => ({
+      return rows.slice(1).map(row => ({
         name: row[0] || '',
         sales: row[1] || '',
         grade: (row[2] || 'C') as 'A' | 'B' | 'C',
         district: row[3] || ''
       })).filter(c => c.name.trim() !== '');
-      if (loaded.length > 0) {
-        return loaded;
-      }
     }
-  } catch (error) {
-    console.warn('Unable to fetch customer grades CSV, using default list:', error);
+    return [];
+  };
+
+  const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1793390915&single=true&output=csv';
+
+  // 1. Fetch published CDN CSV with short 4s timeout (typically responds in ~150ms)
+  let csvCustomers: Customer[] = [];
+  try {
+    const res = await fetchWithTimeout(CSV_URL + `&t=${Date.now()}`, { method: 'GET' }, 4000);
+    if (res.ok) {
+      const text = await res.text();
+      csvCustomers = parseCustomersCSV(text);
+    }
+  } catch (err) {
+    console.warn('Customer published CSV fetch timed out or failed:', err);
+  }
+
+  // 2. Try live Google Apps Script with 3.5s timeout for any newly added customers
+  if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
+    try {
+      const liveUrl = `${UPDATE_SCRIPT_URL}?action=getCustomers&t=${Date.now()}`;
+      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 3500);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json) && json.length > 0) {
+          const liveCustomers = json.map((item: any) => ({
+            name: item.name || '',
+            sales: item.sales || item.user || '',
+            grade: (item.grade || 'C') as 'A' | 'B' | 'C',
+            district: item.district || ''
+          })).filter((c: Customer) => c.name.trim() !== '');
+          if (liveCustomers.length > 0) {
+            setCachedItem('customers', liveCustomers);
+            return liveCustomers;
+          }
+        }
+      }
+    } catch (liveErr) {
+      console.warn('Live GAS getCustomers timed out or unavailable, using published CSV:', liveErr);
+    }
+  }
+
+  if (csvCustomers.length > 0) {
+    setCachedItem('customers', csvCustomers);
+    return csvCustomers;
+  }
+
+  // 3. Fallback to cached customers from previous session
+  try {
+    const cached = await getCachedItem<Customer[]>('customers');
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+  } catch (e) {
+    console.warn('Unable to read cached customers:', e);
   }
 
   return DEFAULT_CUSTOMERS;
@@ -174,7 +215,7 @@ export const fetchSalesData = async (customId?: string): Promise<{ data: SalesDa
   const DATA_URL = getExportUrl(targetId);
 
   try {
-    const response = await fetch(DATA_URL);
+    const response = await fetchWithTimeout(DATA_URL, {}, 8000);
     if (!response.ok) throw new Error('Cloud fetch failed');
 
     const text = await response.text();
@@ -182,15 +223,29 @@ export const fetchSalesData = async (customId?: string): Promise<{ data: SalesDa
     if (rows.length < 2) throw new Error('Empty dataset');
 
     const resultData = processRows(rows);
+    setCachedItem('sales_data', resultData);
     return { data: resultData, source: 'cloud' };
   } catch (error) {
-    console.warn('Syncing fallback to local data', error);
+    console.warn('Cloud sync timed out or failed, checking cache and local data:', error);
+    
+    // Check client-side persistent cache
     try {
-      const localResponse = await fetch('./data.csv');
+      const cached = await getCachedItem<SalesData>('sales_data');
+      if (cached && cached.records && cached.records.length > 0) {
+        console.log('Using cached sales data from previous sync');
+        return { data: cached, source: 'local' };
+      }
+    } catch (cacheErr) {
+      console.warn('Cache lookup failed:', cacheErr);
+    }
+
+    try {
+      const localResponse = await fetchWithTimeout('./data.csv', {}, 5000);
       if (!localResponse.ok) throw new Error('Local fallback failed');
       const localText = await localResponse.text();
       const localRows = parseCSV(localText);
-      return { data: processRows(localRows), source: 'local' };
+      const localData = processRows(localRows);
+      return { data: localData, source: 'local' };
     } catch (localError) {
       throw new Error('No data source available.');
     }
@@ -333,204 +388,161 @@ export const calculateAnalytics = (data: SaleRecord[]): SalesAnalytics => {
 };
 
 export const fetchProducts = async (customId?: string): Promise<Product[]> => {
-  const csvProductsMap = new Map<string, { id?: string; unlimitedStock: boolean; stock?: number }>();
-  
-  // Always load from the published CSV tab first to extract precise stock quantities
-  try {
-    const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
-    const response = await fetch(MASTER_URL + `&t=${Date.now()}`);
-    if (response.ok) {
-      const text = await response.text();
-      const rows = parseCSV(text);
-      if (rows.length > 0) {
-        let headerRowIdx = 0;
-        let titleIdx = 2; // Col C is Title
-        let productIdIdx = 1; // Col B is Product ID
-        let unlimitedStockIdx = 27; // Col AB
-        let stockIdx = 28; // Col AC
-        
-        for (let i = 0; i < Math.min(rows.length, 10); i++) {
-          const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
-          if (idx !== -1) {
-            headerRowIdx = i;
-            titleIdx = idx;
-            const pIdIdx = rows[i].findIndex(cell => {
-              const cellStr = (cell || '').toLowerCase().trim();
-              return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
-            });
-            if (pIdIdx !== -1) productIdIdx = pIdIdx;
-            const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
-            if (uIdx !== -1) unlimitedStockIdx = uIdx;
-            const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
-            if (stIdx !== -1) stockIdx = stIdx;
-            break;
-          }
-        }
-        
-        rows.slice(headerRowIdx + 1).forEach(row => {
-          const productName = row[titleIdx];
-          if (productName && productName.trim()) {
-            const trimmed = productName.trim();
-            if (trimmed.toLowerCase() === 'title') return;
-            
-            const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
-            const prodId = row[productIdIdx]?.toString().trim() || '';
-            let stockVal: number | undefined = undefined;
-            if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
-              stockVal = parseNum(row[stockIdx]);
-            }
-            
-            csvProductsMap.set(trimmed, {
-              id: prodId,
-              unlimitedStock: isUnlimited,
-              stock: stockVal
-            });
-          }
+  const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
+
+  // Helper to parse the full published master CSV in a single pass
+  const parseMasterCSV = (text: string): Product[] => {
+    const rows = parseCSV(text);
+    if (rows.length === 0) return [];
+
+    let headerRowIdx = 0;
+    let titleIdx = 2; // Col C is Title
+    let productIdIdx = 1; // Col B is Product ID
+    let goldIdx = 17; // Col R
+    let silverIdx = 18; // Col S
+    let basicIdx = 19; // Col T
+    let priceIdx = 14; // Col O
+    let discountedPriceIdx = 15; // Col P
+    let unlimitedStockIdx = 27; // Col AB
+    let stockIdx = 28; // Col AC
+
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
+      if (idx !== -1) {
+        headerRowIdx = i;
+        titleIdx = idx;
+        const pIdIdx = rows[i].findIndex(cell => {
+          const cellStr = (cell || '').toLowerCase().trim();
+          return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
         });
+        if (pIdIdx !== -1) productIdIdx = pIdIdx;
+        const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
+        if (rIdx !== -1) goldIdx = rIdx;
+        const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
+        if (sIdx !== -1) silverIdx = sIdx;
+        const tIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('basic'));
+        if (tIdx !== -1) basicIdx = tIdx;
+        const pIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'price');
+        if (pIdx !== -1) priceIdx = pIdx;
+        const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
+        if (dpIdx !== -1) discountedPriceIdx = dpIdx;
+        const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
+        if (uIdx !== -1) unlimitedStockIdx = uIdx;
+        const stIdx = rows[i].findIndex(cell => cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
+        if (stIdx !== -1) stockIdx = stIdx;
+        break;
       }
     }
+
+    const productMap = new Map<string, Product>();
+    rows.slice(headerRowIdx + 1).forEach(row => {
+      const productName = row[titleIdx];
+      if (productName && productName.trim()) {
+        const trimmed = productName.trim();
+        if (trimmed.toLowerCase() === 'title') return;
+
+        const getPrice = (idx: number) => {
+          const val = row[idx];
+          if (val && val.trim() !== '') return parseNum(val);
+          const discounted = row[discountedPriceIdx];
+          if (discounted && discounted.trim() !== '') return parseNum(discounted);
+          return parseNum(row[priceIdx]);
+        };
+
+        const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+        const prodId = row[productIdIdx]?.toString().trim() || '';
+        let stockVal: number | undefined = undefined;
+        if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
+          stockVal = parseNum(row[stockIdx]);
+        }
+
+        if (trimmed.length > 1 && !productMap.has(trimmed)) {
+          productMap.set(trimmed, {
+            id: prodId,
+            name: trimmed,
+            price: getPrice(priceIdx),
+            prices: {
+              A: getPrice(goldIdx),
+              B: getPrice(silverIdx),
+              C: getPrice(basicIdx)
+            },
+            unlimitedStock: isUnlimited,
+            stock: stockVal
+          });
+        }
+      }
+    });
+
+    return Array.from(productMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  // 1. Fetch published CDN master CSV with 4s timeout (typically responds in ~300ms)
+  let csvProducts: Product[] = [];
+  try {
+    const res = await fetchWithTimeout(MASTER_URL + `&t=${Date.now()}`, { method: 'GET' }, 4000);
+    if (res.ok) {
+      const text = await res.text();
+      csvProducts = parseMasterCSV(text);
+    }
   } catch (csvError) {
-    console.warn('CSV fallback for stocks unavailable, proceeding with defaults:', csvError);
+    console.warn('Published master product CSV fetch failed or timed out:', csvError);
   }
 
-  try {
-    // 1. Try to fetch 100% live un-cached data from Google Apps Script Web App first
-    if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
+  // 2. Quick check against GAS with 3.5s timeout for freshly added products
+  if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
+    try {
       const liveUrl = `${UPDATE_SCRIPT_URL}?action=getProducts&t=${Date.now()}`;
-      const res = await fetch(liveUrl, { method: 'GET' });
+      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 3500);
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json) && json.length > 0) {
-          console.log('Successfully fetched live product list, count:', json.length);
-          // Enrich GAS products with stock information from published CSV tab if missing/undefined
-          const enriched: Product[] = json.map((p: any) => {
-            const csvData = csvProductsMap.get(p.name);
+          const csvMap = new Map(csvProducts.map(p => [p.name, p]));
+          const liveProducts: Product[] = json.map((p: any) => {
+            const csvData = csvMap.get(p.name);
             const numPrice = parseNum(p.price);
-            const priceA = p.priceA !== undefined && p.priceA !== '' ? parseNum(p.priceA) : (p.prices?.A !== undefined ? parseNum(p.prices.A) : numPrice);
-            const priceB = p.priceB !== undefined && p.priceB !== '' ? parseNum(p.priceB) : (p.prices?.B !== undefined ? parseNum(p.prices.B) : numPrice);
-            const priceC = p.priceC !== undefined && p.priceC !== '' ? parseNum(p.priceC) : (p.prices?.C !== undefined ? parseNum(p.prices.C) : numPrice);
+            const priceA = p.priceA !== undefined && p.priceA !== '' ? parseNum(p.priceA) : (p.prices?.A !== undefined ? parseNum(p.prices.A) : (csvData?.prices?.A ?? numPrice));
+            const priceB = p.priceB !== undefined && p.priceB !== '' ? parseNum(p.priceB) : (p.prices?.B !== undefined ? parseNum(p.prices.B) : (csvData?.prices?.B ?? numPrice));
+            const priceC = p.priceC !== undefined && p.priceC !== '' ? parseNum(p.priceC) : (p.prices?.C !== undefined ? parseNum(p.prices.C) : (csvData?.prices?.C ?? numPrice));
             return {
               ...p,
-              price: numPrice,
-              prices: {
-                A: priceA,
-                B: priceB,
-                C: priceC
-              },
               id: p.id !== undefined ? p.id : (csvData ? csvData.id : undefined),
+              price: numPrice,
+              prices: { A: priceA, B: priceB, C: priceC },
               unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined)
             };
           });
-          return enriched.sort((a, b) => a.name.localeCompare(b.name));
+
+          // Ensure any products from CSV that weren't in GAS are included
+          csvProducts.forEach(p => {
+            if (!liveProducts.some(lp => lp.name === p.name)) {
+              liveProducts.push(p);
+            }
+          });
+
+          const sortedLive = liveProducts.sort((a, b) => a.name.localeCompare(b.name));
+          setCachedItem('products', sortedLive);
+          return sortedLive;
         }
       }
+    } catch (liveError) {
+      console.warn('Live GAS getProducts timed out or unavailable, using published master CSV products:', liveError);
     }
-  } catch (liveError) {
-    console.warn('Unable to fetch live products from GAS, falling back to published CSV:', liveError);
   }
 
-  // 2. Fallback to published CSV if GAS is unavailable/fails
-  const MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv';
-  
+  if (csvProducts.length > 0) {
+    setCachedItem('products', csvProducts);
+    return csvProducts;
+  }
+
+  // 3. Fallback to client cache
   try {
-    const response = await fetch(MASTER_URL + `&t=${Date.now()}`);
-    if (!response.ok) throw new Error('Master sheet fetch failed');
-    const text = await response.text();
-    const rows = parseCSV(text);
-    if (rows.length > 0) {
-      // Find the header row (usually 0, but scan just in case)
-      let headerRowIdx = 0;
-      let titleIdx = 2; // Col C is Title
-      let productIdIdx = 1; // Col B is Product ID
-      let goldIdx = 17; // Col R
-      let silverIdx = 18; // Col S
-      let basicIdx = 19; // Col T
-      let priceIdx = 14; // Col O
-      let discountedPriceIdx = 15; // Col P
-      let unlimitedStockIdx = 27; // Col AB (default index 27)
-      let stockIdx = 28; // Col AC (default index 28)
-      
-      for (let i = 0; i < Math.min(rows.length, 10); i++) {
-        const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
-        if (idx !== -1) {
-          headerRowIdx = i;
-          titleIdx = idx;
-          const pIdIdx = rows[i].findIndex(cell => {
-            const cellStr = (cell || '').toLowerCase().trim();
-            return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
-          });
-          if (pIdIdx !== -1) productIdIdx = pIdIdx;
-          // Verify other indices based on actual headers if possible
-          const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
-          if (rIdx !== -1) goldIdx = rIdx;
-          const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
-          if (sIdx !== -1) silverIdx = sIdx;
-          const tIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('basic'));
-          if (tIdx !== -1) basicIdx = tIdx;
-          const pIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'price');
-          if (pIdx !== -1) priceIdx = pIdx;
-          const dpIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'discounted price');
-          if (dpIdx !== -1) discountedPriceIdx = dpIdx;
-          const uIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().replace(/[\s_-]/g, '').includes('unlimitedstock'));
-          if (uIdx !== -1) unlimitedStockIdx = uIdx;
-          const stIdx = rows[i].findIndex(cell => cell && cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
-          if (stIdx !== -1) stockIdx = stIdx;
-          break;
-        }
-      }
-
-      const productMap = new Map<string, Product>();
-      rows.slice(headerRowIdx + 1).forEach(row => {
-        const productName = row[titleIdx];
-        if (productName && productName.trim()) {
-          const trimmed = productName.trim();
-          // Skip header if it repeated or invalid titles
-          if (trimmed.toLowerCase() === 'title') return;
-          
-          const getPrice = (idx: number) => {
-            const val = row[idx];
-            if (val && val.trim() !== '') return parseNum(val);
-            
-            const discounted = row[discountedPriceIdx];
-            if (discounted && discounted.trim() !== '') return parseNum(discounted);
-            
-            return parseNum(row[priceIdx]);
-          };
-
-          const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
-          const prodId = row[productIdIdx]?.toString().trim() || '';
-          let stockVal: number | undefined = undefined;
-          if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
-            stockVal = parseNum(row[stockIdx]);
-          }
-
-          // Filter out very short or numeric-only strings if they aren't products
-          if (trimmed.length > 1) {
-            if (!productMap.has(trimmed)) {
-              productMap.set(trimmed, {
-                id: prodId,
-                name: trimmed,
-                prices: {
-                  A: getPrice(goldIdx),
-                  B: getPrice(silverIdx),
-                  C: getPrice(basicIdx)
-                },
-                unlimitedStock: isUnlimited,
-                stock: stockVal
-              });
-            }
-          }
-        }
-      });
-      
-      const loadedProducts = Array.from(productMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-      if (loadedProducts.length > 0) {
-        return loadedProducts;
-      }
+    const cached = await getCachedItem<Product[]>('products');
+    if (cached && cached.length > 0) {
+      return cached;
     }
-  } catch (error) {
-    console.warn('Unable to fetch product list from CSV, using default list:', error);
+  } catch (e) {
+    console.warn('Unable to read cached products:', e);
   }
 
   return DEFAULT_PRODUCTS;

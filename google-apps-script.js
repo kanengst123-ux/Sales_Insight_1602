@@ -536,10 +536,11 @@ function doGet(e) {
             alwaysStock = row[unlimitedIdx].toString().trim() === "1";
           }
           
+          var sVal = 0;
           if (!alwaysStock) {
-            var sVal = parseNum(row[stockIdx]);
+            sVal = parseNum(row[stockIdx]);
             secondaryStockCount = sVal.toString();
-            hasStock = sVal > 0;
+            hasStock = true; // Allow user to order goods that are out of stock
           }
           
           var merchantRemark = row[29] || "";
@@ -556,7 +557,9 @@ function doGet(e) {
               B: priceB,
               C: priceC
             },
-            hasStock: hasStock,
+            unlimitedStock: alwaysStock,
+            stock: !alwaysStock ? sVal : undefined,
+            hasStock: true,
             alwaysStock: alwaysStock,
             secondaryStockCount: secondaryStockCount,
             extraAttributes: {

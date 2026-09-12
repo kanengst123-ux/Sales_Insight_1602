@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchSalesData, calculateAnalytics, fetchCustomerGrades, writeTradeLogToSheet, deleteOrderFromSheet, fetchProducts } from './services/dataService';
+import { getCachedItem } from './services/cacheService';
 import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
@@ -30,6 +31,7 @@ const App: React.FC = () => {
     return stored ? JSON.parse(stored) : [];
   });
   const [preSelectedCustomer, setPreSelectedCustomer] = useState<string | null>(null);
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState<boolean>(false);
 
   useEffect(() => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
@@ -225,8 +227,12 @@ const App: React.FC = () => {
   };
 
 
-  const loadData = useCallback(async (customId?: string) => {
-    setLoading(true);
+  const loadData = useCallback(async (customId?: string, silent: boolean = false) => {
+    if (!silent) {
+      setLoading(true);
+    } else {
+      setIsBackgroundSyncing(true);
+    }
     setError(null);
     try {
       const [salesResult, customerResult, productResult] = await Promise.all([
@@ -238,7 +244,7 @@ const App: React.FC = () => {
       const { data, source } = salesResult;
       
       if (data.records.length === 0) {
-        setError('No sales records found in the dataset.');
+        if (!silent) setError('No sales records found in the dataset.');
       } else {
         setRecords(data.records);
         setHeaders(data.headers);
@@ -249,9 +255,12 @@ const App: React.FC = () => {
         setAnalytics(calculated);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred while syncing with the database.');
+      if (!silent) {
+        setError(err.message || 'An error occurred while syncing with the database.');
+      }
     } finally {
       setLoading(false);
+      setIsBackgroundSyncing(false);
     }
   }, []);
 
@@ -260,10 +269,46 @@ const App: React.FC = () => {
     const urlSheetId = params.get('sheetId');
     if (urlSheetId) {
       setSheetId(urlSheetId);
-      loadData(urlSheetId);
-    } else {
-      loadData();
+      loadData(urlSheetId, false);
+      return;
     }
+
+    let isMounted = true;
+    (async () => {
+      // 1. Try immediate hydration from persistent cache (<50ms)
+      try {
+        const [cachedSales, cachedCust, cachedProd] = await Promise.all([
+          getCachedItem<any>('sales_data'),
+          getCachedItem<Customer[]>('customers'),
+          getCachedItem<Product[]>('products')
+        ]);
+
+        if (isMounted && cachedSales && cachedSales.records && cachedSales.records.length > 0) {
+          setRecords(cachedSales.records);
+          setHeaders(cachedSales.headers);
+          setAnalytics(calculateAnalytics(cachedSales.records));
+          if (cachedCust && cachedCust.length > 0) setCustomers(cachedCust);
+          if (cachedProd && cachedProd.length > 0) setProducts(cachedProd);
+          setDataSource('local');
+          setLoading(false); // Instantly dismiss the "Syncing Engine" screen!
+
+          // Silently revalidate in background to get latest changes without freezing UI
+          loadData(undefined, true);
+          return;
+        }
+      } catch (cacheErr) {
+        console.warn('Cache pre-hydration warning:', cacheErr);
+      }
+
+      // 2. If no cache exists, run standard load with spinner
+      if (isMounted) {
+        loadData(undefined, false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [loadData]);
 
   const handleCustomerAdded = (customerName: string) => {
@@ -340,6 +385,14 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-2xl font-black text-white tracking-tight">Syncing Engine...</h2>
         <p className="text-slate-400 mt-3 max-w-xs font-medium">Fetching high-resolution sales data from Google Drive CSV</p>
+        <button
+          onClick={() => {
+            setLoading(false);
+          }}
+          className="mt-6 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all border border-slate-700 shadow-md active:scale-95"
+        >
+          立即以離線模式進入應用程式
+        </button>
       </div>
     );
   }
@@ -454,6 +507,12 @@ const App: React.FC = () => {
                   <span className={`text-[10px] font-bold uppercase tracking-widest ${dataSource === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
                     {dataSource === 'cloud' ? 'Live Cloud Sync' : 'Offline Mode (Local)'}
                   </span>
+                  {isBackgroundSyncing && (
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-blue-600" />
+                      <span>後台同步中...</span>
+                    </div>
+                  )}
                 </div>
                 <h2 className="text-4xl font-black text-slate-900 tracking-tight">
                   {activeTab === 'dashboard' ? '' : 
