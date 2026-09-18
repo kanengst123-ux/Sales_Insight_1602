@@ -669,7 +669,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   if (selectedCustomer) {
     return (
-      <div className="min-h-screen w-full bg-white animate-in fade-in duration-300 flex flex-col overflow-x-hidden">
+      <div className="h-[100dvh] max-h-[100dvh] w-full bg-white animate-in fade-in duration-300 flex flex-col overflow-hidden">
         {/* Top Layer: Product Search Box */}
         <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50 shadow-sm">
           <div className="w-full max-w-md mx-auto relative flex items-center gap-2">
@@ -1281,10 +1281,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   if (selectedRole) {
     return (
-      <div className="min-h-screen w-full bg-white p-2 sm:p-6 animate-in fade-in duration-300 overflow-x-hidden flex flex-col">
-        <div className="w-full max-w-md mx-auto pt-4 flex-1 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
+      <div className="h-[100dvh] max-h-[100dvh] w-full bg-white p-2 sm:p-6 animate-in fade-in duration-300 flex flex-col overflow-hidden">
+        <div className="w-full max-w-md mx-auto pt-2 sm:pt-4 flex-1 min-h-0 flex flex-col">
+          <div className="flex items-center justify-between mb-3 sm:mb-4 flex-shrink-0">
             <button 
+              type="button"
               onClick={() => setSelectedRole(null)}
               className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors group"
             >
@@ -1296,7 +1297,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             </div>
           </div>
 
-          <div className="relative mb-4 flex items-center gap-2">
+          <div className="relative mb-3 sm:mb-4 flex items-center gap-2 flex-shrink-0">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
@@ -1304,25 +1305,27 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 placeholder="搜尋客戶名稱..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
+                className="w-full pl-12 pr-4 py-3 sm:py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-inner"
               />
             </div>
             <button
+              type="button"
               onClick={() => {
                 setNewCustomerDistrict(selectedDistrict || '九龍東');
                 setNewCustomerGrade('C');
                 setNewCustomerName('');
                 setShowAddCustomerModal(true);
               }}
-              className="p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+              className="p-3 sm:p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
               title="Add New Customer"
             >
               <UserPlus className="w-5 h-5" />
             </button>
             {onShowOrderList && (
               <button 
+                type="button"
                 onClick={onShowOrderList}
-                className="p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+                className="p-3 sm:p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
                 title="Order List"
               >
                 <ListOrdered className="w-5 h-5" />
@@ -1330,10 +1333,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             )}
           </div>
 
-          <div className="flex gap-1 mb-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar scroll-smooth">
+          <div className="flex gap-1 mb-3 overflow-x-auto pb-2 custom-scrollbar no-scrollbar scroll-smooth flex-shrink-0">
             {districts.map((d) => (
               <button
                 key={d}
+                type="button"
                 onClick={() => setSelectedDistrict(selectedDistrict === d ? null : d)}
                 className={`py-2 px-2 rounded-xl text-[9px] font-black transition-all whitespace-nowrap min-w-[70px] border ${
                   selectedDistrict === d 
@@ -1352,36 +1356,40 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 document.activeElement.blur();
               }
             }}
-            className="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 custom-scrollbar pb-20 touch-pan-y overscroll-contain"
+            className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar pb-24 touch-pan-y"
+            style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {filteredCustomers.length === 0 ? (
-              <div className="col-span-2 p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">
+              <div className="p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">
                 <ShoppingCart className="w-8 h-8 text-slate-200 mx-auto mb-3" />
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">沒有找到匹配的客戶</p>
               </div>
             ) : (
-              filteredCustomers.map((c, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedCustomer(c.name)}
-                  className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 hover:bg-slate-50/50 transition-all duration-200 group active:scale-[0.98] text-left"
-                >
-                  <div className="overflow-hidden">
-                    <p className="text-slate-900 font-bold text-[11px] leading-tight truncate">{c.name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`text-[8px] font-black uppercase tracking-widest px-1 rounded ${
-                        c.grade === 'A' ? 'bg-yellow-100 text-yellow-700' :
-                        c.grade === 'B' ? 'bg-slate-100 text-slate-600' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>Grade {c.grade}</span>
-                      {(selectedRole === 'Admin' || searchQuery.trim()) && (c.sales || (c as any).user) && (
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales || (c as any).user}{c.district ? ` (${c.district})` : ''}</p>
-                      )}
+              <div className="grid grid-cols-2 gap-2">
+                {filteredCustomers.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedCustomer(c.name)}
+                    className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 hover:bg-slate-50/50 transition-all duration-200 group active:scale-[0.98] text-left select-none"
+                  >
+                    <div className="overflow-hidden">
+                      <p className="text-slate-900 font-bold text-[11px] leading-tight truncate">{c.name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-1 rounded ${
+                          c.grade === 'A' ? 'bg-yellow-100 text-yellow-700' :
+                          c.grade === 'B' ? 'bg-slate-100 text-slate-600' :
+                          'bg-orange-100 text-orange-700'
+                        }`}>Grade {c.grade}</span>
+                        {(selectedRole === 'Admin' || searchQuery.trim()) && (c.sales || (c as any).user) && (
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">Sales: {c.sales || (c as any).user}{c.district ? ` (${c.district})` : ''}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
-                </button>
-              ))
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
