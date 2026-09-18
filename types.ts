@@ -68,6 +68,7 @@ export interface Product {
   };
   unlimitedStock?: boolean;
   stock?: number;
+  list?: string | number;
 }
 
 export interface Customer {

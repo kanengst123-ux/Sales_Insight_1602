@@ -405,6 +405,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     let discountedPriceIdx = 15; // Col P
     let unlimitedStockIdx = 27; // Col AB
     let stockIdx = 28; // Col AC
+    let listIdx = 31; // Col AF (header: list)
 
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
       const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
@@ -430,6 +431,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         if (uIdx !== -1) unlimitedStockIdx = uIdx;
         const stIdx = rows[i].findIndex(cell => cell && (cell.toLowerCase().trim() === 'stock' || cell.includes('庫存')));
         if (stIdx !== -1) stockIdx = stIdx;
+        const lIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'list');
+        if (lIdx !== -1) listIdx = lIdx;
         break;
       }
     }
@@ -455,6 +458,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
           stockVal = parseNum(row[stockIdx]);
         }
+        const listVal = row[listIdx] !== undefined && row[listIdx] !== null ? row[listIdx].toString().trim() : '';
 
         if (trimmed.length > 1 && !productMap.has(trimmed)) {
           productMap.set(trimmed, {
@@ -467,7 +471,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
               C: getPrice(basicIdx)
             },
             unlimitedStock: isUnlimited,
-            stock: stockVal
+            stock: stockVal,
+            list: listVal
           });
         }
       }
@@ -509,7 +514,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
               price: numPrice,
               prices: { A: priceA, B: priceB, C: priceC },
               unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
-              stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined)
+              stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined),
+              list: p.list !== undefined && p.list !== null ? String(p.list).trim() : (csvData ? csvData.list : undefined)
             };
           });
 

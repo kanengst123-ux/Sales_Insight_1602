@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts, addCustomerToSheet, addProductToSheet } from '../services/dataService';
 import { Product, OrderItem, Customer, SavedOrder } from '../types';
@@ -144,7 +144,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   useEffect(() => {
     const loadData = async () => {
-      if (initialProducts && initialProducts.length > 0) {
+      if (initialProducts && initialProducts.length > 0 && initialProducts.some(p => p.list !== undefined)) {
         setProducts(initialProducts);
         setProductsLoading(false);
         return;
@@ -199,59 +199,36 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return customers.find(c => c.name === selectedCustomer);
   }, [customers, selectedCustomer]);
 
-  const getRemainingStock = (product: Product) => {
+  const reservedQtyMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (savedOrders) {
+      savedOrders.forEach(order => {
+        if (order.isKeyedIn) return;
+        if (editingOrder && order.id === editingOrder.id) return;
+        order.items.forEach(item => {
+          map.set(item.name, (map.get(item.name) || 0) + item.quantity);
+        });
+      });
+    }
+    selectedItems.forEach(item => {
+      map.set(item.name, (map.get(item.name) || 0) + item.quantity);
+    });
+    return map;
+  }, [savedOrders, editingOrder, selectedItems]);
+
+  const getRemainingStock = useCallback((product: Product) => {
     if (product.unlimitedStock) return Infinity;
     const baseStock = product.stock ?? 0;
-    
-    let reducedQty = 0;
-    if (savedOrders) {
-      savedOrders.forEach(order => {
-        if (order.isKeyedIn) {
-          return;
-        }
-        if (editingOrder && order.id === editingOrder.id) {
-          return;
-        }
-        order.items.forEach(item => {
-          if (item.name === product.name) {
-            reducedQty += item.quantity;
-          }
-        });
-      });
-    }
-
-    selectedItems.forEach(item => {
-      if (item.name === product.name) {
-        reducedQty += item.quantity;
-      }
-    });
-
+    const reducedQty = reservedQtyMap.get(product.name) || 0;
     return baseStock - reducedQty;
-  };
+  }, [reservedQtyMap]);
 
-  const getProductStockLimit = (productName: string) => {
+  const getProductStockLimit = useCallback((productName: string) => {
     const prod = products.find(p => p.name === productName);
-    if (!prod) return Infinity;
-    if (prod.unlimitedStock) return Infinity;
-    
-    let reducedQty = 0;
-    if (savedOrders) {
-      savedOrders.forEach(order => {
-        if (order.isKeyedIn) {
-          return;
-        }
-        if (editingOrder && order.id === editingOrder.id) {
-          return;
-        }
-        order.items.forEach(item => {
-          if (item.name === productName) {
-            reducedQty += item.quantity;
-          }
-        });
-      });
-    }
+    if (!prod || prod.unlimitedStock) return Infinity;
+    const reducedQty = reservedQtyMap.get(productName) || 0;
     return (prod.stock ?? 0) - reducedQty;
-  };
+  }, [products, reservedQtyMap]);
 
   const handleAddProduct = (product: Product) => {
     const remaining = getRemainingStock(product);
@@ -287,18 +264,69 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     const defaultQty = isSpecialNegativeProduct ? -1 : (boxInfo ? boxInfo.units : 12);
     const qtyToAdd = defaultQty;
 
-    const newItem: OrderItem = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: product.name,
-      // Default to 1 outer (either parsed or fallback 12) per user request
-      quantity: qtyToAdd,
-      price: tieredPrice,
-      isOuterBox: isSpecialNegativeProduct ? false : true, // Start in unit mode for special products, outer mode for others
-      unitsPerBox: boxInfo ? boxInfo.units : 12,
-      outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
-    };
-    setSelectedItems(prev => [newItem, ...prev]);
-    setProductSearchQuery(''); // Clear search after adding
+    setSelectedItems(prev => {
+      const existingIndex = prev.findIndex(item => item.name === product.name);
+      if (existingIndex !== -1 && !isSpecialNegativeProduct) {
+        const item = prev[existingIndex];
+        const step = item.isOuterBox ? (Number(item.unitsPerBox) || (boxInfo ? boxInfo.units : 12)) : 1;
+        return prev.map((it, idx) => {
+          if (idx === existingIndex) {
+            return { ...it, quantity: (Number(it.quantity) || 0) + step };
+          }
+          return it;
+        });
+      }
+
+      const newItem: OrderItem = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: product.name,
+        // Default to 1 outer (either parsed or fallback 12) per user request
+        quantity: qtyToAdd,
+        price: tieredPrice,
+        isOuterBox: isSpecialNegativeProduct ? false : true, // Start in unit mode for special products, outer mode for others
+        unitsPerBox: boxInfo ? boxInfo.units : 12,
+        outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
+      };
+      return [newItem, ...prev];
+    });
+    // Do not clear productSearchQuery so user can select multiple items from the dropdown
+  };
+
+  const handleReduceProduct = (product: Product) => {
+    setSelectedItems(prev => {
+      const existingIndex = prev.findIndex(item => item.name === product.name);
+      if (existingIndex === -1) return prev;
+
+      const item = prev[existingIndex];
+      const boxInfo = parseOuterBoxInfo(product.name);
+      const isSpecialNegativeProduct = 
+        product.name.includes('上單收多$') || 
+        product.name.includes('扣上單 $') ||
+        product.name.includes('扣上單$') ||
+        product.name.trim() === '上單收多$' ||
+        product.name.trim() === '扣上單 $' ||
+        product.name.trim() === '扣上單$';
+
+      if (isSpecialNegativeProduct) {
+        return prev.filter((_, idx) => idx !== existingIndex);
+      }
+
+      const step = item.isOuterBox ? (Number(item.unitsPerBox) || (boxInfo ? boxInfo.units : 12)) : 1;
+      const curQty = Number(item.quantity) || 0;
+
+      if (curQty <= step) {
+        // Cancel the selection by removing this item from the order
+        return prev.filter((_, idx) => idx !== existingIndex);
+      } else {
+        // Reduce quantity by one box/unit
+        return prev.map((it, idx) => {
+          if (idx === existingIndex) {
+            return { ...it, quantity: curQty - step };
+          }
+          return it;
+        });
+      }
+    });
   };
 
   const handleUpdateItem = (id: string, updates: Partial<OrderItem>) => {
@@ -415,7 +443,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const filteredProducts = useMemo(() => {
     if (!productSearchQuery.trim()) return [];
     const query = productSearchQuery.toLowerCase();
-    return products.filter(p => (p?.name || '').toLowerCase().includes(query));
+    return products.filter(p => {
+      const nameMatches = (p?.name || '').toLowerCase().includes(query);
+      if (!nameMatches) return false;
+      const listVal = p?.list !== undefined && p?.list !== null ? String(p.list).trim() : '';
+      return listVal === '0';
+    });
   }, [products, productSearchQuery]);
 
   const filteredCustomers = useMemo(() => {
@@ -655,8 +688,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 placeholder="落單"
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
+                className="w-full pl-9 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
               />
+              {productSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setProductSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full transition-colors"
+                  title="清除搜尋"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
             <button
               onClick={() => setShowAddProductModal(true)}
@@ -678,71 +721,145 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
           
           {/* Search Results Dropdown */}
           {productSearchQuery && (
-            <div className="max-w-md mx-auto relative">
+            <>
+              {/* Backdrop to dismiss dropdown by clicking outside */}
               <div 
-                onScroll={() => {
-                  if (document.activeElement instanceof HTMLElement) {
-                    document.activeElement.blur();
-                  }
-                }}
-                onTouchMove={() => {
-                  if (document.activeElement instanceof HTMLElement) {
-                    document.activeElement.blur();
-                  }
-                }}
-                className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-[50vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5"
-              >
-                {productsLoading ? (
-                  <div className="p-4 text-center text-slate-300">
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-                    <p className="text-[10px] font-black uppercase tracking-widest">Searching...</p>
-                  </div>
-                ) : filteredProducts.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    找不到產品
-                  </div>
-                ) : (
-                  filteredProducts.map((p, idx) => {
-                    const remaining = getRemainingStock(p);
-                    const isUnlimited = !!p.unlimitedStock;
-                    const isNegative = !isUnlimited && remaining < 0;
-                    const isZero = !isUnlimited && remaining === 0;
-                    return (
-                      <div
-                        key={idx}
-                        onClick={() => handleAddProduct(p)}
-                        className="w-full flex items-center justify-between p-3 border-b border-slate-50 last:border-none transition-colors group text-left cursor-pointer hover:bg-blue-50"
-                      >
-                        <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(p);
-                            }}
-                            className={`p-1 rounded-md transition-colors ${
-                              isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
-                            }`}
-                          >
-                            <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
-                          </button>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[11px] font-bold leading-snug break-words text-slate-700 group-hover:text-blue-700">{p.name}</span>
-                            <span className={`text-[9px] font-semibold mt-0.5 ${
-                              isUnlimited ? 'text-slate-400' : isNegative ? 'text-rose-600 font-bold' : isZero ? 'text-amber-600 font-bold' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
-                            }`}>
-                              {isUnlimited ? '庫存: 無限制' : isNegative ? `剩餘庫存: ${remaining} (負數庫存，可落單)` : isZero ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${remaining}`}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-1 rounded-lg transition-colors bg-slate-100 group-hover:bg-blue-100">
-                          <Plus className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
-                        </div>
+                className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[0.5px]" 
+                onClick={() => setProductSearchQuery('')} 
+              />
+              <div className="max-w-md mx-auto relative z-50">
+                <div 
+                  onScroll={() => {
+                    if (document.activeElement instanceof HTMLInputElement) {
+                      document.activeElement.blur();
+                    }
+                  }}
+                  className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-[55vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5 touch-pan-y overscroll-contain flex flex-col"
+                >
+                  {productsLoading ? (
+                    <div className="p-4 text-center text-slate-300">
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                      <p className="text-[10px] font-black uppercase tracking-widest">Searching...</p>
+                    </div>
+                  ) : filteredProducts.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
+                      找不到產品
+                    </div>
+                  ) : (
+                    <>
+                      <div className="divide-y divide-slate-50">
+                        {filteredProducts.slice(0, 60).map((p, idx) => {
+                          const remaining = getRemainingStock(p);
+                          const isUnlimited = !!p.unlimitedStock;
+                          const isNegative = !isUnlimited && remaining < 0;
+                          const isZero = !isUnlimited && remaining === 0;
+                          
+                          const matchingItems = selectedItems.filter(item => item.name === p.name);
+                          const isAdded = matchingItems.length > 0;
+                          const totalQty = matchingItems.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
+                          const firstItem = matchingItems[0];
+                          const boxUnits = firstItem ? (Number(firstItem.unitsPerBox) || 12) : 12;
+                          const isBoxMode = firstItem ? firstItem.isOuterBox : true;
+                          const displayQtyText = isBoxMode && boxUnits > 0
+                            ? `${Math.round((totalQty / boxUnits) * 10) / 10} ${firstItem?.outerBoxUnit || '箱'}`
+                            : `${totalQty}`;
+
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => handleAddProduct(p)}
+                              className={`w-full flex items-center justify-between p-3 transition-colors group text-left cursor-pointer ${
+                                isAdded ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFavorite(p);
+                                  }}
+                                  className={`p-1 rounded-md transition-colors ${
+                                    isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
+                                  }`}
+                                >
+                                  <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
+                                </button>
+                                <div className="flex flex-col min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-bold leading-snug break-words text-slate-700 group-hover:text-blue-700">{p.name}</span>
+                                    {isAdded && (
+                                      <span className="text-[9px] font-black text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                        已選 {displayQtyText}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={`text-[9px] font-semibold mt-0.5 ${
+                                    isUnlimited ? 'text-slate-400' : isNegative ? 'text-rose-600 font-bold' : isZero ? 'text-amber-600 font-bold' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
+                                  }`}>
+                                    {isUnlimited ? '庫存: 無限制' : isNegative ? `剩餘庫存: ${remaining} (負數庫存，可落單)` : isZero ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${remaining}`}
+                                  </span>
+                                </div>
+                              </div>
+                              <div 
+                                className="flex items-center gap-1.5 flex-shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  disabled={!isAdded}
+                                  onClick={() => handleReduceProduct(p)}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                    isAdded 
+                                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/70 active:scale-90 shadow-sm' 
+                                      : 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed opacity-40'
+                                  }`}
+                                  title={isAdded ? "減少或取消選取" : "尚未選取"}
+                                >
+                                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddProduct(p)}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all active:scale-90 ${
+                                    isAdded 
+                                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30' 
+                                      : 'bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-500 shadow-sm'
+                                  }`}
+                                  title="增加選取"
+                                >
+                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })
-                )}
+                      {filteredProducts.length > 60 && (
+                        <div className="p-2.5 text-center text-[10px] text-slate-400 bg-slate-50 font-bold border-t border-slate-100">
+                          顯示前 60 項結果，請輸入更多關鍵字以縮小搜尋範圍
+                        </div>
+                      )}
+
+                      {/* Sticky Footer: Order Items count & Finish Selection Button */}
+                      <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 p-2.5 px-3.5 flex items-center justify-between shadow-lg mt-auto">
+                        <span className="text-xs text-slate-600 font-bold">
+                          已加入訂單：<span className="text-blue-600 font-black">{selectedItems.length}</span> 項貨品
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setProductSearchQuery('')}
+                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>完成選擇</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
 
@@ -756,7 +873,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar touch-pan-y overscroll-contain"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
@@ -1050,7 +1167,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar touch-pan-y overscroll-contain"
                 >
                   <div className="max-w-md mx-auto">
                     <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
@@ -1231,16 +1348,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
           
           <div 
             onScroll={() => {
-              if (document.activeElement instanceof HTMLElement) {
+              if (document.activeElement instanceof HTMLInputElement) {
                 document.activeElement.blur();
               }
             }}
-            onTouchMove={() => {
-              if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-              }
-            }}
-            className="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 custom-scrollbar pb-20"
+            className="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 custom-scrollbar pb-20 touch-pan-y overscroll-contain"
           >
             {filteredCustomers.length === 0 ? (
               <div className="col-span-2 p-12 border-2 border-dashed border-slate-100 rounded-3xl text-center">

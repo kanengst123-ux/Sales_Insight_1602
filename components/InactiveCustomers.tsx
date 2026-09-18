@@ -289,16 +289,11 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data, masters = [
                   </div>
                   <div 
                     onScroll={() => {
-                      if (document.activeElement instanceof HTMLElement) {
+                      if (document.activeElement instanceof HTMLInputElement) {
                         document.activeElement.blur();
                       }
                     }}
-                    onTouchMove={() => {
-                      if (document.activeElement instanceof HTMLElement) {
-                        document.activeElement.blur();
-                      }
-                    }}
-                    className="max-h-64 overflow-y-auto"
+                    className="max-h-64 overflow-y-auto touch-pan-y overscroll-contain"
                   >
                     {suggestions.map((s, i) => (
                       <button
