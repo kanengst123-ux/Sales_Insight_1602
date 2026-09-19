@@ -1,0 +1,455 @@
+[
+  {
+    "id": "ADMIN00003",
+    "date": "2026-07-28T11:24:42.913Z",
+    "customerName": "其他",
+    "orderAmount": 2796,
+    "salesName": "Admin",
+    "remark": "",
+    "items": [
+      {
+        "id": "1785237879409-6xyx2fxzm",
+        "name": "美素佳兒 1    12/箱",
+        "quantity": 12,
+        "price": 233,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      }
+    ],
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "ADMIN00002",
+    "date": "2026-05-25T10:02:24.393Z",
+    "customerName": "HKTVMALL",
+    "orderAmount": 468,
+    "salesName": "Admin",
+    "remark": "",
+    "items": [
+      {
+        "id": "1779703340987-i8brabvrj",
+        "name": "tempo 12卷紙",
+        "quantity": 12,
+        "price": 39,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "EVA00001",
+    "date": "2026-05-25T03:46:46.836Z",
+    "customerName": "$康富中西大藥房有限公司$",
+    "orderAmount": 60,
+    "salesName": "EVA",
+    "remark": "",
+    "items": [
+      {
+        "id": "1779680802509-1twp1xz4m",
+        "name": "(TH)SOFFELL 驅蚊水 (香橙) 80ML",
+        "quantity": 4,
+        "price": 15,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "1778995942854",
+    "date": "2026-05-17T05:32:22.854Z",
+    "customerName": "譽城 (銅鑼灣)",
+    "orderAmount": 30734.4,
+    "salesName": "KASEY",
+    "remark": "",
+    "items": [
+      {
+        "id": "1779004413230-r0whqw4j4",
+        "name": "黃道益     144/箱",
+        "quantity": 432,
+        "price": 58,
+        "isOuterBox": true,
+        "unitsPerBox": 144,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "1778995934359-kztup1z96",
+        "name": "美贊臣 A2 enfapro    6/箱",
+        "quantity": 24,
+        "price": 215.8,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "1778995907522-gqrsa6ssc",
+        "name": "必理痛 24's 特強 傷風感冒丸   12/條",
+        "quantity": 0,
+        "price": 73.3,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "條"
+      },
+      {
+        "id": "1778995852903-f0j33fpq1",
+        "name": "(NS)英國 ACTASK 維生素D3營養片 ULTRA 60粒",
+        "quantity": 12,
+        "price": 41.6,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isHeld": true
+  },
+  {
+    "id": "1778988365764",
+    "date": "2026-05-17T03:26:05.764Z",
+    "customerName": "奧新藥房有限公司(樂富)",
+    "orderAmount": 1296,
+    "salesName": "KASEY",
+    "remark": "",
+    "items": [
+      {
+        "id": "1778988350011-cuf7nd8hi",
+        "name": "(JP) Fancl 膠原蛋白口服液  (50ml*10支裝) 2026年11月",
+        "quantity": 12,
+        "price": 108,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isHeld": true
+  },
+  {
+    "id": "1778943683445",
+    "date": "2026-05-16T15:01:23.445Z",
+    "customerName": "聯惠藥業 (元朗)",
+    "orderAmount": 84,
+    "salesName": "YO",
+    "remark": "",
+    "items": [
+      {
+        "id": "1778943680772-0uu40j9bo",
+        "name": "(JP)味覺糖科羅清水白桃40G",
+        "quantity": 12,
+        "price": 7,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isKeyedIn": false,
+    "isHeld": true
+  },
+  {
+    "id": "1778939980952",
+    "date": "2026-05-16T13:59:40.952Z",
+    "customerName": "$聯譽藥房有限公司$",
+    "orderAmount": 3216,
+    "salesName": "KATIE",
+    "remark": "",
+    "items": [
+      {
+        "id": "1778939979063-xw5n87cri",
+        "name": "(lf) Nature Made 濃縮B族加維C 460粒   1-12",
+        "quantity": 12,
+        "price": 268,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "isHeld": true
+  },
+  {
+    "id": "ADMIN00004",
+    "customerName": "落鋪",
+    "salesName": "Admin",
+    "date": "2026/09/19 19:29:49",
+    "remark": "",
+    "items": [
+      {
+        "id": "ADMIN00004-item-1",
+        "name": "舊街場白咖啡(斑蘭風味)30gx13條x20包",
+        "quantity": 10,
+        "price": 28,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 280,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KASEY00001",
+    "customerName": "$仁康中西藥房(連理街)$",
+    "salesName": "KASEY",
+    "date": "2026/09/19 18:57:02",
+    "remark": "",
+    "items": [
+      {
+        "id": "KASEY00001-item-21",
+        "name": "(JP) Naturie 薏仁保濕面霜 180g",
+        "quantity": 12,
+        "price": 40,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 480,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KASEY00002",
+    "customerName": "落鋪",
+    "salesName": "KASEY",
+    "date": "2026/09/19 16:14:58",
+    "remark": "",
+    "items": [
+      {
+        "id": "KASEY00002-item-15",
+        "name": "桂格麥皮820g（藍）",
+        "quantity": 12,
+        "price": 999,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "KASEY00002-item-16",
+        "name": "桂格麥皮 820g (紅)    12/箱",
+        "quantity": 12,
+        "price": 15.2,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "KASEY00002-item-17",
+        "name": "桂格麥皮 800g (藍)    12/箱",
+        "quantity": 12,
+        "price": 14,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "KASEY00002-item-18",
+        "name": "桂格麥皮 800g (金)    12/箱",
+        "quantity": 12,
+        "price": 15,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "KASEY00002-item-19",
+        "name": "桂格麥皮 800g (紅)     12/盒",
+        "quantity": 12,
+        "price": 14,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "盒"
+      }
+    ],
+    "orderAmount": 12686.4,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "EVA00041",
+    "customerName": "華風藥行",
+    "salesName": "EVA",
+    "date": "2026/09/19 01:26:17",
+    "remark": "收及單 明天送\n收換貨",
+    "items": [
+      {
+        "id": "EVA00041-item-11",
+        "name": "兒童幸福傷風素12粒",
+        "quantity": 12,
+        "price": 43,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00041-item-12",
+        "name": "兒童幸福傷風感冒素16粒",
+        "quantity": 12,
+        "price": 59,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00041-item-13",
+        "name": "美贊臣 A4 enfakid   6/箱",
+        "quantity": 6,
+        "price": 170,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "EVA00041-item-14",
+        "name": "美贊臣 藍臻 2  6/箱",
+        "quantity": 3,
+        "price": 347,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 3285,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "EVA00040",
+    "customerName": "東亞大藥房",
+    "salesName": "EVA",
+    "date": "2026/09/19 01:24:38",
+    "remark": "",
+    "items": [
+      {
+        "id": "EVA00040-item-5",
+        "name": "幸福傷風素12粒",
+        "quantity": 12,
+        "price": 0,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00040-item-6",
+        "name": "幸福傷風咳素 8s",
+        "quantity": 13,
+        "price": 39,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00040-item-7",
+        "name": "幸福傷風咳素 24s",
+        "quantity": 13,
+        "price": 97,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00040-item-8",
+        "name": "皇家美素佳兒有機新裝( 綠蓋綠身) 2號 6/箱",
+        "quantity": 12,
+        "price": 409,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "EVA00040-item-9",
+        "name": "皇家美素佳兒有機新裝( 綠蓋綠身) 3號 6/箱",
+        "quantity": 6,
+        "price": 369,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "EVA00040-item-10",
+        "name": "美素佳兒 1    12/箱",
+        "quantity": 6,
+        "price": 232,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 10282,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "EVA00039",
+    "customerName": "成和大藥房",
+    "salesName": "EVA",
+    "date": "2026/09/19 01:21:38",
+    "remark": "收及單 明天送\n換一箱xxx COD",
+    "items": [
+      {
+        "id": "EVA00039-item-1",
+        "name": "幸福傷風咳熱飲 5'S",
+        "quantity": 12,
+        "price": 38,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00039-item-2",
+        "name": "皇家美素佳兒 4 12/箱",
+        "quantity": 12,
+        "price": 248,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "EVA00039-item-3",
+        "name": "皇家美素佳兒有機2（綠蓋黃身)",
+        "quantity": 12,
+        "price": 379,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "EVA00039-item-4",
+        "name": "皇家美素佳兒1號 12/箱",
+        "quantity": 12,
+        "price": 403,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      }
+    ],
+    "orderAmount": 12816,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "ADMIN00005",
+    "customerName": "落鋪",
+    "salesName": "Admin",
+    "date": "2026/09/19 19:34:55",
+    "remark": "",
+    "items": [
+      {
+        "id": "ADMIN00005-item-5",
+        "name": "Aveeon 燕麥高效舒緩沐浴露1L #905",
+        "quantity": 12,
+        "price": 85,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 1020,
+    "isKeyedIn": true,
+    "isHeld": false
+  }
+]

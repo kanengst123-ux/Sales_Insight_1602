@@ -293,7 +293,7 @@ const InactiveCustomers: React.FC<InactiveCustomersProps> = ({ data, masters = [
                         document.activeElement.blur();
                       }
                     }}
-                    className="max-h-64 overflow-y-auto touch-pan-y overscroll-contain"
+                    className="max-h-64 overflow-y-auto overscroll-contain"
                   >
                     {suggestions.map((s, i) => (
                       <button

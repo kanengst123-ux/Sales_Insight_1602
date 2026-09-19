@@ -796,8 +796,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               />
               <div className="max-w-md mx-auto relative z-50">
                 <div 
-                  className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-[55vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5 touch-pan-y overscroll-contain flex flex-col"
-                  style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+                  className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-[55vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5 flex flex-col"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                   {productsLoading ? (
                     <div className="p-4 text-center text-slate-300">
@@ -944,7 +944,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar touch-pan-y overscroll-contain"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
@@ -1308,7 +1308,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar touch-pan-y overscroll-contain"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
                     <h4 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
@@ -1509,7 +1509,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 document.activeElement.blur();
               }
             }}
-            className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar pb-24 touch-pan-y"
+            className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar pb-24"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {filteredCustomers.length === 0 ? (

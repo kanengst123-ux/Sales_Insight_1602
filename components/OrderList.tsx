@@ -163,7 +163,7 @@ const OrderList: React.FC<OrderListProps> = ({
   };
 
   return (
-    <div className="relative space-y-4">
+    <div className="relative space-y-4 pb-20 sm:pb-8 w-full">
       {/* Top Banner / Controls Card */}
       <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
         <div className="px-4 sm:px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -422,7 +422,7 @@ const OrderList: React.FC<OrderListProps> = ({
         </AnimatePresence>
 
         {/* Orders Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto w-full">
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-slate-50/80 border-b border-slate-100">
               <tr>

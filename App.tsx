@@ -7,7 +7,7 @@ import {
   writeTradeLogToSheet, 
   deleteOrderFromSheet, 
   fetchProducts,
-  extractOrdersFromSalesRecords,
+  fetchCloudTradeLogOrders,
   fetchServerOrders,
   saveServerOrder,
   syncServerOrders,
@@ -26,53 +26,54 @@ import OrderEntry from './components/OrderEntry';
 import OrderList from './components/OrderList';
 import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered } from 'lucide-react';
 
+// Track order IDs submitted in this current session so they stay marked until next sheet sync
+const recentlySubmittedOrderIds = new Set<string>();
+
 const mergeOrderLists = (
   local: SavedOrder[],
   cloud: SavedOrder[],
-  server: SavedOrder[]
+  server: SavedOrder[],
+  recentlySubmitted: Set<string> = recentlySubmittedOrderIds
 ): SavedOrder[] => {
   const map = new Map<string, SavedOrder>();
+  const validCloudIds = new Set<string>();
 
-  // 1. First add cloud orders (from Trade_Log, guaranteed keyed-in)
+  // 1. Cloud orders come EXCLUSIVELY from 'Trade_log' & 'Trade_log_admin' tabs of 'Product_list'
+  // Every order in cloud is an authentic, confirmed keyed-in order.
+  // The 'Log' tab has nothing to do with '訂單列表'.
   for (const o of cloud) {
     if (o && o.id) {
+      validCloudIds.add(o.id);
       map.set(o.id, { ...o, isKeyedIn: true, isHeld: false });
     }
   }
 
-  // 2. Add server orders (pending or recent from other devices)
-  for (const o of server) {
-    if (o && o.id) {
-      if (map.has(o.id)) {
-        const cloudOrder = map.get(o.id)!;
-        map.set(o.id, {
-          ...cloudOrder,
-          ...o,
-          isKeyedIn: cloudOrder.isKeyedIn || o.isKeyedIn,
-          isHeld: o.isHeld ?? cloudOrder.isHeld
-        });
-      } else {
-        map.set(o.id, o);
-      }
+  // Helper to merge or filter candidates from server or local
+  const mergeCandidate = (o: SavedOrder) => {
+    if (!o || !o.id) return;
+    
+    // If this order is confirmed in Trade_log or Trade_log_admin:
+    if (validCloudIds.has(o.id)) {
+      const cloudOrder = map.get(o.id)!;
+      map.set(o.id, {
+        ...cloudOrder,
+        remark: o.remark || cloudOrder.remark,
+        isHeld: o.isHeld ?? cloudOrder.isHeld
+      });
+      return;
     }
-  }
 
-  // 3. Add local orders (current browser session)
-  for (const o of local) {
-    if (o && o.id) {
-      if (map.has(o.id)) {
-        const existing = map.get(o.id)!;
-        map.set(o.id, {
-          ...existing,
-          ...o,
-          isKeyedIn: existing.isKeyedIn || o.isKeyedIn,
-          isHeld: o.isHeld ?? existing.isHeld
-        });
-      } else {
-        map.set(o.id, o);
-      }
+    // If NOT in Trade_log / Trade_log_admin:
+    // ONLY keep if it is NOT keyed in yet (i.e. pending draft), or is currently held,
+    // or was recently submitted in the current session.
+    // Any keyed-in order not in Trade_log / Trade_log_admin is an obsolete record from 'Log' and is DISCARDED.
+    if (!o.isKeyedIn || o.isHeld || recentlySubmitted.has(o.id)) {
+      map.set(o.id, o);
     }
-  }
+  };
+
+  for (const o of server) mergeCandidate(o);
+  for (const o of local) mergeCandidate(o);
 
   return Array.from(map.values()).sort((a, b) => {
     const timeA = new Date(a.date).getTime() || 0;
@@ -96,8 +97,17 @@ const App: React.FC = () => {
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
   const [isKeyingIn, setIsKeyingIn] = useState<boolean>(false);
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>(() => {
-    const stored = localStorage.getItem('榮昇_saved_orders');
-    return stored ? JSON.parse(stored) : [];
+    try {
+      const stored = localStorage.getItem('榮昇_saved_orders');
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return [];
+      // STRICT FILTER: On initial startup, only keep unsubmitted/held drafts from localStorage.
+      // All keyed-in orders will be loaded freshly and exclusively from Trade_log & Trade_log_admin!
+      return parsed.filter(o => o && o.id && (!o.isKeyedIn || o.isHeld));
+    } catch {
+      return [];
+    }
   });
   const [preSelectedCustomer, setPreSelectedCustomer] = useState<string | null>(null);
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState<boolean>(false);
@@ -193,10 +203,7 @@ const App: React.FC = () => {
       }
     };
 
-    // 1. Scan sheet records (orderId)
-    records.forEach(r => parseIdNumericPart(r.orderId));
-
-    // 2. Scan saved local orders (id)
+    // Scan saved orders (which includes Trade_log, Trade_log_admin, server, and local)
     savedOrders.forEach(o => parseIdNumericPart(o.id));
 
     const nextNum = maxNum + 1;
@@ -299,6 +306,7 @@ const App: React.FC = () => {
         if (!res) success = false;
       }
       if (success) {
+        ordersToKeyIn.forEach(o => recentlySubmittedOrderIds.add(o.id));
         setSavedOrders(prev => prev.map(o => {
           const shouldMark = ordersToKeyIn.some(toKey => toKey.id === o.id);
           if (shouldMark) {
@@ -327,11 +335,12 @@ const App: React.FC = () => {
     }
     setError(null);
     try {
-      const [salesResult, customerResult, productResult, serverOrdersResult] = await Promise.all([
+      const [salesResult, customerResult, productResult, serverOrdersResult, cloudTradeOrders] = await Promise.all([
         fetchSalesData(customId),
         fetchCustomerGrades(),
         fetchProducts(),
-        fetchServerOrders()
+        fetchServerOrders(),
+        fetchCloudTradeLogOrders()
       ]);
 
       const { data, source } = salesResult;
@@ -347,10 +356,9 @@ const App: React.FC = () => {
         const calculated = calculateAnalytics(data.records);
         setAnalytics(calculated);
 
-        // Reconstruct orders from Trade_Log and merge with cross-device server orders and local orders
-        const cloudOrders = extractOrdersFromSalesRecords(data.records);
+        // Orders in '訂單列表' strictly come ONLY from 'Trade_log' & 'Trade_log_admin'
         setSavedOrders(prev => {
-          const merged = mergeOrderLists(prev, cloudOrders, serverOrdersResult);
+          const merged = mergeOrderLists(prev, cloudTradeOrders, serverOrdersResult);
           syncServerOrders(merged).catch(() => {});
           return merged;
         });
@@ -367,17 +375,18 @@ const App: React.FC = () => {
 
   const syncAndRefreshOrders = useCallback(async () => {
     try {
-      const serverOrdersResult = await fetchServerOrders();
-      if (records.length > 0) {
-        const cloudOrders = extractOrdersFromSalesRecords(records);
-        setSavedOrders(prev => mergeOrderLists(prev, cloudOrders, serverOrdersResult));
-      } else {
-        setSavedOrders(prev => mergeOrderLists(prev, [], serverOrdersResult));
-      }
+      const [serverOrdersResult, cloudTradeOrders] = await Promise.all([
+        fetchServerOrders(),
+        fetchCloudTradeLogOrders()
+      ]);
+      setSavedOrders(prev => {
+        const merged = mergeOrderLists(prev, cloudTradeOrders, serverOrdersResult);
+        return merged;
+      });
     } catch (e) {
       console.warn('Failed to refresh orders:', e);
     }
-  }, [records]);
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'saved_orders') return;
@@ -400,11 +409,12 @@ const App: React.FC = () => {
     (async () => {
       // 1. Try immediate hydration from persistent cache (<50ms)
       try {
-        const [cachedSales, cachedCust, cachedProd, serverOrdersResult] = await Promise.all([
+        const [cachedSales, cachedCust, cachedProd, serverOrdersResult, cachedCloudOrders] = await Promise.all([
           getCachedItem<any>('sales_data'),
           getCachedItem<Customer[]>('customers'),
           getCachedItem<Product[]>('products'),
-          fetchServerOrders()
+          fetchServerOrders(),
+          getCachedItem<SavedOrder[]>('cloud_trade_orders')
         ]);
 
         if (isMounted && cachedSales && cachedSales.records && cachedSales.records.length > 0) {
@@ -416,8 +426,7 @@ const App: React.FC = () => {
           setDataSource('local');
           setLoading(false); // Instantly dismiss the "Syncing Engine" screen!
 
-          const cachedCloudOrders = extractOrdersFromSalesRecords(cachedSales.records);
-          setSavedOrders(prev => mergeOrderLists(prev, cachedCloudOrders, serverOrdersResult));
+          setSavedOrders(prev => mergeOrderLists(prev, cachedCloudOrders || [], serverOrdersResult));
 
           // Silently revalidate in background to get latest changes without freezing UI
           loadData(undefined, true);
@@ -624,7 +633,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 p-2 sm:p-4 md:p-8 lg:p-10 overflow-x-hidden">
+      <main className="flex-1 p-2 sm:p-4 md:p-8 lg:p-10 pb-28 md:pb-10 min-h-0 w-full">
         <div className="max-w-7xl mx-auto">
           {activeTab !== 'saved_orders' && (
             <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">

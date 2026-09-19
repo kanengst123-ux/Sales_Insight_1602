@@ -7,9 +7,25 @@
 }
 
 @layer base {
-  html, body {
+  html {
     @apply font-sans bg-[#f8fafc] text-slate-900;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+  }
+
+  body {
+    @apply font-sans bg-[#f8fafc] text-slate-900;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    position: relative;
   }
 
   #root {
@@ -19,11 +35,22 @@
 }
 
 /* Hardware-accelerated momentum scrolling for all scroll containers */
-.overflow-y-auto,
-.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: auto;
+  -webkit-user-select: auto;
+}
+
 .overflow-auto {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
+  touch-action: pan-x pan-y;
 }
 
 /* Custom sleek scrollbars */
