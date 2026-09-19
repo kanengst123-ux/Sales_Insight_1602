@@ -1,5 +1,5 @@
 
-import { SaleRecord, SalesAnalytics, SalesData, Product, Customer } from '../types';
+import { SaleRecord, SalesAnalytics, SalesData, Product, Customer, SavedOrder, OrderItem } from '../types';
 import { getCachedItem, setCachedItem } from './cacheService';
 
 const DEFAULT_SHEET_ID = '10gGU4ZZH_qUKwYklfIK0sQFNCUCfUc36C3SpkfUoQlA';
@@ -260,11 +260,14 @@ const processRows = (rows: string[][]): SalesData => {
     item: 1,        // B
     quantity: 3,    // D
     unit: 4,        // E
+    ref: 5,         // F
     price: 6,       // G
     customer: 7,    // H
     subtotal: 9,    // J
     user: 10,       // K
+    invoice: 11,    // L
     paid: 12,       // M
+    remark: 13,     // N
     countCol: 17,   // R
     colS: 18        // S
   };
@@ -317,7 +320,10 @@ const processRows = (rows: string[][]): SalesData => {
       colSValue: getRaw(MAP.colS),
       countValue: parseNum(getRaw(MAP.countCol)),
       unit: getRaw(MAP.unit),
-      price: parseNum(getRaw(MAP.price))
+      price: parseNum(getRaw(MAP.price)),
+      invoiceNo: getRaw(MAP.invoice),
+      colM: getRaw(MAP.paid),
+      remark: getRaw(MAP.remark)
     };
   });
 
@@ -648,4 +654,179 @@ export const deleteOrderFromSheet = async (orderId: string): Promise<boolean> =>
     return false;
   }
 };
+
+/**
+ * Reconstructs individual SavedOrder objects from raw Trade_Log sales records.
+ * This guarantees that orders saved/keyed-in by any user across any device
+ * are instantly visible to the Admin and other authorized roles.
+ */
+export const extractOrdersFromSalesRecords = (records: SaleRecord[]): SavedOrder[] => {
+  const orderMap = new Map<string, SavedOrder>();
+
+  for (let idx = 0; idx < records.length; idx++) {
+    const r = records[idx];
+    const customer = (r.customerName || '').trim();
+    if (!customer || customer === 'Unknown') continue;
+
+    // Check if Col M (paidStatus/colM/orderId) has an app-generated order ID
+    const rawColM = (r.colM || r.paidStatus || r.orderId || r['Paid'] || '').toString().trim();
+    const isAppOrderId = /^(EVA|YO|KATIE|KASEY|ADMIN|ORDER-)/i.test(rawColM);
+
+    const inv = (r.invoiceNo || r['invoice_no'] || '').toString().trim();
+
+    let key = '';
+    if (isAppOrderId) {
+      key = rawColM;
+    } else if (inv && inv !== '..') {
+      key = inv;
+    } else {
+      const cleanDate = (r.orderDate || '').split(' ')[0] || `date-${idx}`;
+      key = `${cleanDate}_${customer}_${r.userName}`;
+    }
+
+    const itemPrice = r.price || (r.quantity > 0 ? (r.subtotal || r.sales) / r.quantity : 0);
+    const itemSubtotal = r.subtotal || r.sales || (itemPrice * r.quantity);
+    const isOuterBox = (r.unit || '').toLowerCase() === 'box' || (r.unit || '').includes('箱') || (r.unit || '').includes('條');
+
+    const orderItem: OrderItem = {
+      id: `${key}-item-${idx}`,
+      name: r.productName,
+      quantity: r.quantity || 1,
+      price: itemPrice,
+      isOuterBox,
+      unitsPerBox: r.countValue || null,
+      outerBoxUnit: r.unit || null
+    };
+
+    if (!orderMap.has(key)) {
+      const rem = (r.remark || r['.'] || '').toString().trim();
+      orderMap.set(key, {
+        id: key,
+        date: r.orderDate,
+        customerName: customer,
+        orderAmount: itemSubtotal,
+        salesName: r.userName || 'Unknown',
+        remark: rem === '.' ? '' : rem,
+        items: [orderItem],
+        isHeld: false,
+        isKeyedIn: true
+      });
+    } else {
+      const existing = orderMap.get(key)!;
+      existing.items.push(orderItem);
+      existing.orderAmount += itemSubtotal;
+      if (!existing.remark) {
+        const rem = (r.remark || r['.'] || '').toString().trim();
+        if (rem && rem !== '.') {
+          existing.remark = rem;
+        }
+      }
+    }
+  }
+
+  return Array.from(orderMap.values());
+};
+
+/**
+ * Fetch cross-device pending & saved orders from the server
+ */
+export const fetchServerOrders = async (): Promise<SavedOrder[]> => {
+  try {
+    const res = await fetchWithTimeout('/api/orders', { method: 'GET' }, 4000);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.orders)) {
+        return json.orders;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch server orders:', e);
+  }
+  return [];
+};
+
+/**
+ * Save or update a single order on the server so other devices can see it in real-time
+ */
+export const saveServerOrder = async (order: SavedOrder): Promise<boolean> => {
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order)
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Could not save order to server:', e);
+    return false;
+  }
+};
+
+/**
+ * Batch sync orders with the server
+ */
+export const syncServerOrders = async (orders: SavedOrder[]): Promise<SavedOrder[]> => {
+  try {
+    const res = await fetch('/api/orders/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orders })
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.orders)) {
+        return json.orders;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not sync orders with server:', e);
+  }
+  return orders;
+};
+
+/**
+ * Delete an order from the server
+ */
+export const deleteServerOrder = async (orderId: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Could not delete order from server:', e);
+    return false;
+  }
+};
+
+/**
+ * Toggle hold status on the server
+ */
+export const toggleHoldServerOrder = async (orderId: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/hold`, {
+      method: 'PATCH'
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Could not toggle hold on server:', e);
+    return false;
+  }
+};
+
+/**
+ * Mark order as keyed in on the server
+ */
+export const keyInServerOrder = async (orderId: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/keyin`, {
+      method: 'PATCH'
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Could not mark keyed in on server:', e);
+    return false;
+  }
+};
+
 

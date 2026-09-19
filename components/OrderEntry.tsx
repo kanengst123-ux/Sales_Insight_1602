@@ -283,7 +283,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       : (!isUnlimited ? Math.min(defaultStep, remaining) : defaultStep);
 
     if (qtyToAdd <= 0 && !isSpecialNegativeProduct) {
-      alert(`「${product.name}」可用庫存不足！`);
+      alert(`「${product.name}」目前可用庫存為 0，不能再訂購！`);
       return;
     }
 
@@ -305,14 +305,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
         });
       }
 
+      const boxUnits = boxInfo ? boxInfo.units : 12;
+      const isBoxMode = isSpecialNegativeProduct ? false : (qtyToAdd >= boxUnits);
+
       const newItem: OrderItem = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: product.name,
         // Default to 1 outer (or remaining available stock if less)
         quantity: qtyToAdd,
         price: tieredPrice,
-        isOuterBox: isSpecialNegativeProduct ? false : true,
-        unitsPerBox: boxInfo ? boxInfo.units : 12,
+        isOuterBox: isBoxMode,
+        unitsPerBox: boxUnits,
         outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
       };
       return [newItem, ...prev];
@@ -384,6 +387,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               q = maxAllowed;
             }
           }
+          if (!isSpecialNegativeProduct && q < 0) {
+            q = 0;
+          }
           merged.quantity = q;
         }
         return merged;
@@ -422,6 +428,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
         const maxStock = getMaxStockForOrder(item.name);
         if (item.quantity > maxStock) {
           alert(`貨品「${item.name}」訂購數量 (${item.quantity}) 超過了可用庫存 (${maxStock})！請先調減數量後再完成此單。`);
+          return;
+        }
+        if (item.quantity <= 0) {
+          alert(`貨品「${item.name}」數量必須大於 0！`);
           return;
         }
       }
@@ -738,20 +748,20 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder="落單 (搜尋產品名稱)"
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base sm:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 shadow-inner"
+                className="w-full pl-11 pr-10 py-3 sm:py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base sm:text-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 shadow-inner"
               />
               {productSearchQuery && (
                 <button
                   type="button"
                   onClick={() => setProductSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full transition-colors"
                   title="清除搜尋"
                 >
                   <X className="w-4 h-4" />
@@ -763,7 +773,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
               title="登記新貨品"
             >
-              <PackagePlus className="w-4 h-4" />
+              <PackagePlus className="w-5 h-5" />
             </button>
             {onShowOrderList && (
               <button 
@@ -771,7 +781,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                 className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
                 title="Order List"
               >
-                <ListOrdered className="w-4 h-4" />
+                <ListOrdered className="w-5 h-5" />
               </button>
             )}
           </div>
@@ -786,12 +796,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               />
               <div className="max-w-md mx-auto relative z-50">
                 <div 
-                  onScroll={() => {
-                    if (document.activeElement instanceof HTMLInputElement) {
-                      document.activeElement.blur();
-                    }
-                  }}
                   className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-[55vh] overflow-y-auto custom-scrollbar ring-8 ring-black/5 touch-pan-y overscroll-contain flex flex-col"
+                  style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
                 >
                   {productsLoading ? (
                     <div className="p-4 text-center text-slate-300">
@@ -799,7 +805,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                       <p className="text-xs font-black uppercase tracking-widest">Searching...</p>
                     </div>
                   ) : filteredProducts.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">
+                    <div className="p-6 text-center text-slate-400 text-base font-bold uppercase tracking-widest">
                       找不到產品
                     </div>
                   ) : (
@@ -830,7 +836,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                 }
                                 handleAddProduct(p);
                               }}
-                              className={`w-full flex items-center justify-between p-3.5 transition-colors group text-left ${
+                              className={`w-full flex items-center justify-between p-3.5 transition-colors group text-left touch-manipulation ${
                                 isOutOfStock ? 'bg-slate-50/70 opacity-60 cursor-not-allowed' : isAdded ? 'bg-blue-50/50 hover:bg-blue-50 cursor-pointer' : 'hover:bg-slate-50 cursor-pointer'
                               }`}
                             >
@@ -841,23 +847,23 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                     e.stopPropagation();
                                     toggleFavorite(p);
                                   }}
-                                  className={`p-1 rounded-md transition-colors ${
+                                  className={`p-1.5 rounded-md transition-colors ${
                                     isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
                                   }`}
                                 >
-                                  <Star className={`w-4 h-4 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
+                                  <Star className={`w-4 h-4 sm:w-5 sm:h-5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
                                 </button>
                                 <div className="flex flex-col min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm sm:text-base font-bold leading-snug break-words text-slate-800 group-hover:text-blue-700">{p.name}</span>
+                                    <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-800 group-hover:text-blue-700">{p.name}</span>
                                     {isAdded && (
-                                      <span className="text-xs font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                      <span className="text-xs sm:text-sm font-black text-blue-600 bg-blue-100 px-2.5 py-0.5 rounded-full whitespace-nowrap">
                                         已選 {displayQtyText}
                                       </span>
                                     )}
                                   </div>
-                                  <span className={`text-xs font-semibold mt-1 ${
-                                    isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600 font-bold' : (remaining < 10) ? 'text-amber-600 font-bold' : 'text-slate-500'
+                                  <span className={`text-xs sm:text-sm font-bold mt-1 ${
+                                    isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
                                   }`}>
                                     {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (remaining < 10) ? `剩餘庫存: ${remaining} (庫存緊張)` : `剩餘庫存: ${remaining}`}
                                   </span>
@@ -871,20 +877,20 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                   type="button"
                                   disabled={!isAdded}
                                   onClick={() => handleReduceProduct(p)}
-                                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                                     isAdded 
                                       ? 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 active:scale-90 shadow-sm' 
                                       : 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed opacity-40'
                                   }`}
                                   title={isAdded ? "減少或取消選取" : "尚未選取"}
                                 >
-                                  <Minus className="w-4 h-4 stroke-[2.5]" />
+                                  <Minus className="w-4 h-4 stroke-[3]" />
                                 </button>
                                 <button
                                   type="button"
                                   disabled={isOutOfStock}
                                   onClick={() => handleAddProduct(p)}
-                                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                                     isOutOfStock 
                                       ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed opacity-40' 
                                       : isAdded 
@@ -893,7 +899,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                   }`}
                                   title={isOutOfStock ? "庫存不足，無法選取" : "增加選取"}
                                 >
-                                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                                  <Plus className="w-4 h-4 stroke-[3]" />
                                 </button>
                               </div>
                             </div>
@@ -901,22 +907,22 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         })}
                       </div>
                       {filteredProducts.length > 60 && (
-                        <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 font-bold border-t border-slate-100">
+                        <div className="p-3 text-center text-xs sm:text-sm text-slate-400 bg-slate-50 font-bold border-t border-slate-100">
                           顯示前 60 項結果，請輸入更多關鍵字以縮小搜尋範圍
                         </div>
                       )}
 
                       {/* Sticky Footer: Order Items count & Finish Selection Button */}
                       <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 p-3 px-4 flex items-center justify-between shadow-lg mt-auto">
-                        <span className="text-sm text-slate-700 font-bold">
+                        <span className="text-sm sm:text-base text-slate-700 font-bold">
                           已加入訂單：<span className="text-blue-600 font-black">{selectedItems.length}</span> 項貨品
                         </span>
                         <button
                           type="button"
                           onClick={() => setProductSearchQuery('')}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-sm font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
+                          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-sm sm:text-base font-black rounded-xl shadow-sm transition-all flex items-center gap-1.5"
                         >
-                          <Check className="w-4 h-4" />
+                          <Check className="w-4 h-4 stroke-[3]" />
                           <span>完成選擇</span>
                         </button>
                       </div>
@@ -945,23 +951,23 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                       <div className="flex flex-col px-1">
                         <div className="flex items-center justify-between gap-3 mb-2.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+                            <h4 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight truncate">
                               {selectedCustomer}
                             </h4>
-                            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                            <span className="text-xs sm:text-sm font-black bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full flex-shrink-0">
                               Grade {selectedCustomerInfo?.grade}
                             </span>
-                            <span className="flex items-center justify-center min-w-[22px] h-5 bg-slate-200 text-slate-700 text-xs font-bold rounded-full px-1.5 flex-shrink-0">
+                            <span className="flex items-center justify-center min-w-[24px] h-6 bg-slate-200 text-slate-700 text-xs sm:text-sm font-black rounded-full px-2 flex-shrink-0">
                               {selectedItems.length}
                             </span>
                           </div>
                           {selectedItems.length > 0 && (
                             <button 
                               onClick={handleFinalSave}
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl shadow-md shadow-green-600/20 active:scale-95 transition-all group shrink-0 text-sm sm:text-base font-black flex items-center gap-1.5"
+                              className="bg-green-600 hover:bg-green-700 text-white px-4 sm:px-5 py-2.5 rounded-xl shadow-md shadow-green-600/20 active:scale-95 transition-all group shrink-0 text-base sm:text-lg font-black flex items-center gap-1.5"
                               title="Place Order"
                             >
-                              <Check className="w-4 h-4 stroke-[3]" />
+                              <Check className="w-5 h-5 stroke-[3]" />
                               <span>此單完成</span>
                             </button>
                           )}
@@ -969,14 +975,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
                         {/* Order Summary banner */}
                         {selectedItems.length > 0 && (
-                          <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl px-3.5 py-2.5 mb-3 shadow-xs">
-                            <div className="flex items-center gap-2 text-slate-700 font-bold text-sm sm:text-base">
-                              <ShoppingCart className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                              <span>已選 <strong className="text-blue-700 font-black">{selectedItems.length}</strong> 項貨品</span>
+                          <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl px-4 py-3 mb-3 shadow-xs">
+                            <div className="flex items-center gap-2 text-slate-700 font-bold text-base sm:text-lg">
+                              <ShoppingCart className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                              <span>已選 <strong className="text-blue-700 font-black text-lg sm:text-xl">{selectedItems.length}</strong> 項貨品</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs sm:text-sm font-bold text-slate-500">總金額:</span>
-                              <span className="text-base sm:text-xl font-black text-blue-700 tabular-nums">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm sm:text-base font-bold text-slate-500">總金額:</span>
+                              <span className="text-xl sm:text-2xl font-black text-blue-700 tabular-nums">
                                 ${totalOrderAmount.toLocaleString()}
                               </span>
                             </div>
@@ -986,19 +992,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         <div className="flex flex-wrap items-center gap-3">
                           <button 
                             onClick={() => setShowRemarkInput(!showRemarkInput)}
-                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border shadow-sm ${
+                            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm sm:text-base font-black transition-all border shadow-sm ${
                               remark 
                                 ? 'bg-blue-700 text-white border-blue-700 shadow-blue-700/20' 
                                 : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700 shadow-blue-600/20'
                             }`}
                           >
-                            <Check className={`w-3.5 h-3.5 ${remark ? 'block' : 'hidden'}`} />
+                            <Check className={`w-4 h-4 stroke-[3] ${remark ? 'block' : 'hidden'}`} />
                             {remark ? '已添加備註' : '+ 備註'}
                           </button>
 
                           {/* Quick Select Remark Checkboxes next to the button */}
-                          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl max-w-full">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl max-w-full">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('收及單')}
@@ -1007,8 +1013,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                               />
                               收及單
                             </label>
-                            <div className="h-3.5 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-4 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('明天送')}
@@ -1017,8 +1023,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                               />
                               明天送
                             </label>
-                            <div className="h-3.5 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-4 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('COD')}
@@ -1027,8 +1033,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                               />
                               COD
                             </label>
-                            <div className="h-3.5 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-4 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('原板落, 不搬')}
@@ -1040,7 +1046,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           </div>
 
                           {remark && (
-                            <button onClick={() => setRemark('')} className="text-xs font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
+                            <button onClick={() => setRemark('')} className="text-xs sm:text-sm font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
                           )}
                         </div>
                       </div>
@@ -1055,7 +1061,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                              placeholder="輸入備註 (銷售員姓名、特殊送貨要求等)..."
                              value={remark}
                              onChange={(e) => setRemark(e.target.value)}
-                             className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3.5 py-2.5 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[70px]"
+                             className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-base sm:text-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[75px]"
                            />
                          </motion.div>
                        )}
@@ -1065,8 +1071,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
                              <Package className="w-8 h-8 opacity-30" />
                            </div>
-                           <p className="text-sm font-black uppercase tracking-wider text-slate-400">尚未選取任何貨品</p>
-                           <p className="text-xs font-bold text-slate-400">請在上方搜尋欄輸入貨品名稱，或在常用貨品中選取</p>
+                           <p className="text-base font-black uppercase tracking-wider text-slate-400">尚未選取任何貨品</p>
+                           <p className="text-sm font-bold text-slate-400">請在上方搜尋欄輸入貨品名稱，或在常用貨品中選取</p>
                          </div>
                        ) : (
                          <div className="space-y-3.5">
@@ -1079,9 +1085,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                              const maxStockForThisOrder = prod && !prod.unlimitedStock ? Math.max(0, (prod.stock ?? 0) - otherReserved) : Infinity;
 
                              return (
-                               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:shadow-md transition-all group">
-                                 <div className="flex items-center justify-between gap-2 mb-2.5">
-                                   <div className="flex items-center gap-2 flex-1 min-w-0">
+                               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all group">
+                                 <div className="flex items-center justify-between gap-2 mb-3">
+                                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                      <button
                                        type="button"
                                        onClick={() => {
@@ -1091,12 +1097,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                          isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
                                        }`}
                                      >
-                                       <Star className={`w-4 h-4 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
+                                       <Star className={`w-5 h-5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
                                      </button>
                                      <div className="flex flex-col min-w-0">
-                                       <h5 className="text-sm sm:text-base font-bold text-slate-900 leading-snug break-words">{item.name}</h5>
+                                       <h5 className="text-base sm:text-lg md:text-xl font-black text-slate-900 leading-snug break-words">{item.name}</h5>
                                        {!isUnlimited && (
-                                         <span className={`text-xs font-semibold mt-0.5 ${rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-rose-600 font-bold' : rem < 10 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
+                                         <span className={`text-xs sm:text-sm font-bold mt-1 ${rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'}`}>
                                            {rem <= 0 ? '已達庫存上限 (剩餘可用: 0)' : `剩餘可用庫存: ${rem}`}
                                          </span>
                                        )}
@@ -1110,7 +1116,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                            const targetQty = Math.min(1, maxStockForThisOrder);
                                            handleUpdateItem(item.id, { isOuterBox: false, quantity: targetQty });
                                          }}
-                                         className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                                         className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
                                            !item.isOuterBox 
                                              ? 'bg-white text-blue-600 shadow-sm' 
                                              : 'text-slate-500 hover:text-slate-700'
@@ -1128,7 +1134,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                            }
                                            handleUpdateItem(item.id, { isOuterBox: true, quantity: targetQty });
                                          }}
-                                         className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                                         className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
                                            item.isOuterBox 
                                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
                                              : 'text-slate-500 hover:text-slate-700'
@@ -1140,9 +1146,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                    )}
                                  </div>
 
-                                 <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                                    {/* Quantity Stepper */}
-                                   <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-28 flex-shrink-0">
+                                   <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-32 flex-shrink-0">
                                      <button 
                                        type="button"
                                        onClick={() => {
@@ -1150,14 +1156,15 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                          const curQty = Number(item.quantity) || 0;
                                          handleUpdateItem(item.id, { quantity: curQty - step });
                                        }}
-                                       className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                       className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                                        title="減少數量"
                                      >
-                                       <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                       <Minus className="w-4 h-4 stroke-[3]" />
                                      </button>
                                      <input
                                        type="number"
                                        value={item.quantity}
+                                       min="0"
                                        max={!isUnlimited ? maxStockForThisOrder : undefined}
                                        onChange={(e) => {
                                          let val = parseFloat(e.target.value) || 0;
@@ -1167,7 +1174,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                          }
                                          handleUpdateItem(item.id, { quantity: val });
                                        }}
-                                       className="w-full text-center bg-transparent text-base sm:text-lg font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                       className="w-full text-center bg-transparent text-lg sm:text-xl font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
                                      />
                                      <button 
                                        type="button"
@@ -1186,14 +1193,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                            handleUpdateItem(item.id, { quantity: curQty + step });
                                          }
                                        }}
-                                       className={`p-2 transition-colors ${
+                                       className={`p-2.5 transition-colors ${
                                          isStockExhausted 
                                            ? 'text-slate-200 cursor-not-allowed' 
-                                           : 'text-slate-500 hover:text-blue-600 hover:bg-slate-100'
+                                           : 'text-slate-600 hover:text-blue-600 hover:bg-slate-100'
                                        }`}
                                        title={isStockExhausted ? "庫存不足，無法再增加" : "增加數量"}
                                      >
-                                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                       <Plus className="w-4 h-4 stroke-[3]" />
                                      </button>
                                    </div>
 
@@ -1213,14 +1220,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                              return copy;
                                            });
                                          }}
-                                         className="p-1.5 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
                                          title="減$1"
                                        >
-                                         <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                         <Minus className="w-4 h-4 stroke-[3]" />
                                        </button>
 
-                                       <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 px-1.5 py-1 w-20 flex-shrink-0">
-                                         <span className="text-slate-400 text-xs font-bold mr-0.5 shrink-0">$</span>
+                                       <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 px-2 py-1.5 w-24 flex-shrink-0">
+                                         <span className="text-slate-400 text-sm font-black mr-0.5 shrink-0">$</span>
                                          <input
                                            type="text"
                                            inputMode="decimal"
@@ -1246,7 +1253,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                                return copy;
                                              });
                                            }}
-                                           className="w-full text-center bg-transparent text-base sm:text-lg font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                           className="w-full text-center bg-transparent text-base sm:text-lg font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
                                          />
                                        </div>
 
@@ -1263,26 +1270,26 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                              return copy;
                                            });
                                          }}
-                                         className="p-1.5 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
                                          title="加$1"
                                        >
-                                         <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                         <Plus className="w-4 h-4 stroke-[3]" />
                                        </button>
                                      </div>
                                    </div>
 
                                    {/* Subtotal & Delete */}
                                    <div className="flex items-center justify-end gap-2 flex-shrink-0">
-                                     <span className="text-sm sm:text-base font-black text-blue-600 block tabular-nums leading-none text-right">
+                                     <span className="text-base sm:text-lg md:text-xl font-black text-blue-600 block tabular-nums leading-none text-right">
                                        ${(item.quantity * item.price).toLocaleString()}
                                      </span>
                                      <button 
                                        type="button"
                                        onClick={() => handleRemoveItem(item.id)}
-                                       className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+                                       className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
                                        title="刪除"
                                      >
-                                       <Trash2 className="w-4 h-4" />
+                                       <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                                      </button>
                                    </div>
                                  </div>
@@ -1304,7 +1311,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar touch-pan-y overscroll-contain"
                 >
                   <div className="max-w-md mx-auto">
-                    <h4 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
+                    <h4 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
                        常用貨品 (Favorites)
                     </h4>
                      
@@ -1313,34 +1320,34 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
                            <Star className="w-8 h-8 opacity-30" />
                          </div>
-                         <p className="text-sm font-black uppercase tracking-wider text-slate-400">尚無常用貨品</p>
-                         <p className="text-xs font-bold text-slate-400 leading-relaxed max-w-[200px]">在搜尋時點擊星星圖示即可將產品加入常用貨品</p>
+                         <p className="text-base font-black uppercase tracking-wider text-slate-400">尚無常用貨品</p>
+                         <p className="text-sm font-bold text-slate-400 leading-relaxed max-w-[220px]">在搜尋時點擊星星圖示即可將產品加入常用貨品</p>
                        </div>
                     ) : (
-                       <div className="grid grid-cols-1 gap-2.5">
+                       <div className="grid grid-cols-1 gap-3">
                          {favorites.map((p, idx) => {
                            const rem = getRemainingStock(p);
                            const isOutOfStock = !p.unlimitedStock && rem <= 0;
                            return (
                              <div
                                key={idx}
-                               className="w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl hover:border-blue-500/30 transition-all group"
+                               className="w-full flex items-center justify-between p-3.5 sm:p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500/30 transition-all group"
                              >
-                               <div className="flex items-center gap-2.5 flex-1 truncate pr-2">
+                               <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
                                  <button
                                    type="button"
                                    onClick={() => toggleFavorite(p)}
-                                   className="p-1 rounded-md text-yellow-400 transition-colors"
+                                   className="p-1.5 rounded-md text-yellow-400 transition-colors"
                                  >
-                                   <Star className="w-4 h-4 fill-current" />
+                                   <Star className="w-5 h-5 fill-current" />
                                  </button>
                                  <div className="flex flex-col min-w-0 align-left text-left">
-                                   <span className="text-sm sm:text-base font-bold leading-snug truncate text-slate-800">{p.name}</span>
+                                   <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-900">{p.name}</span>
                                    {p.unlimitedStock ? (
-                                     <span className="text-xs font-semibold mt-0.5 text-slate-400">庫存: 無限制</span>
+                                     <span className="text-xs sm:text-sm font-bold mt-0.5 text-slate-400">庫存: 無限制</span>
                                    ) : (
-                                     <span className={`text-xs font-semibold mt-0.5 ${
-                                       isOutOfStock ? 'text-rose-600 font-bold' : rem < 10 ? 'text-amber-600 font-bold' : 'text-slate-500'
+                                     <span className={`text-xs sm:text-sm font-bold mt-0.5 ${
+                                       isOutOfStock ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'
                                      }`}>
                                        {isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
                                      </span>
@@ -1358,14 +1365,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                    handleAddProduct(p);
                                    setActiveTab('order');
                                  }}
-                                 className={`p-2 rounded-xl active:scale-95 transition-all flex-shrink-0 text-white ${
+                                 className={`p-2.5 rounded-xl active:scale-95 transition-all flex-shrink-0 text-white ${
                                    isOutOfStock 
                                      ? 'bg-slate-300 cursor-not-allowed shadow-none' 
                                      : 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20'
                                  }`}
                                  title={isOutOfStock ? "庫存不足，無法選取" : "加入訂單"}
                                >
-                                 <Plus className="w-4 h-4 stroke-[2.5]" />
+                                 <Plus className="w-5 h-5 stroke-[3]" />
                                </button>
                              </div>
                            );
@@ -1380,7 +1387,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
           {/* Floating Bottom Tab Switcher (Slide Bar) */}
           <div className="fixed bottom-4 right-4 sm:left-1/2 sm:-translate-x-1/2 z-30 flex justify-center pointer-events-none">
-            <div className="w-full max-w-[260px] sm:max-w-[300px] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-300/50 p-1 flex items-center relative pointer-events-auto">
+            <div className="w-full max-w-[280px] sm:max-w-[320px] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-300/50 p-1 flex items-center relative pointer-events-auto">
               {/* Sliding highlight background */}
               <div className="absolute inset-y-1 left-1 bottom-1 top-1 pointer-events-none" style={{ width: 'calc(50% - 4px)' }}>
                 <motion.div
@@ -1397,11 +1404,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('order')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-black tracking-wider relative z-10 transition-colors duration-300 ${
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm sm:text-base font-black tracking-wider relative z-10 transition-colors duration-300 ${
                   activeTab === 'order' ? 'text-white' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <ShoppingCart className="w-4 h-4" />
+                <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
                 訂單 ({selectedItems.length})
               </button>
 
@@ -1409,11 +1416,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('favorites')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-black tracking-wider relative z-10 transition-colors duration-300 ${
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm sm:text-base font-black tracking-wider relative z-10 transition-colors duration-300 ${
                   activeTab === 'favorites' ? 'text-white' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <Star className="w-4 h-4" />
+                <Star className="w-4 h-4 sm:w-5 sm:h-5" />
                 常用
               </button>
             </div>
