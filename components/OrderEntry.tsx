@@ -199,7 +199,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return customers.find(c => c.name === selectedCustomer);
   }, [customers, selectedCustomer]);
 
-  const reservedQtyMap = useMemo(() => {
+  // Saved orders reservation (excluding the current editing order if any)
+  const otherOrdersReservedMap = useMemo(() => {
     const map = new Map<string, number>();
     if (savedOrders) {
       savedOrders.forEach(order => {
@@ -210,11 +211,16 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
         });
       });
     }
+    return map;
+  }, [savedOrders, editingOrder]);
+
+  const reservedQtyMap = useMemo(() => {
+    const map = new Map<string, number>(otherOrdersReservedMap);
     selectedItems.forEach(item => {
       map.set(item.name, (map.get(item.name) || 0) + item.quantity);
     });
     return map;
-  }, [savedOrders, editingOrder, selectedItems]);
+  }, [otherOrdersReservedMap, selectedItems]);
 
   const getRemainingStock = useCallback((product: Product) => {
     if (product.unlimitedStock) return Infinity;
@@ -223,16 +229,33 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return baseStock - reducedQty;
   }, [reservedQtyMap]);
 
-  const getProductStockLimit = useCallback((productName: string) => {
+  const getMaxStockForOrder = useCallback((productName: string) => {
     const prod = products.find(p => p.name === productName);
     if (!prod || prod.unlimitedStock) return Infinity;
-    const reducedQty = reservedQtyMap.get(productName) || 0;
-    return (prod.stock ?? 0) - reducedQty;
-  }, [products, reservedQtyMap]);
+    const reservedByOthers = otherOrdersReservedMap.get(productName) || 0;
+    return Math.max(0, (prod.stock ?? 0) - reservedByOthers);
+  }, [products, otherOrdersReservedMap]);
+
+  const totalOrderAmount = useMemo(() => {
+    return selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+  }, [selectedItems]);
 
   const handleAddProduct = (product: Product) => {
+    const isSpecialNegativeProduct = 
+      product.name.includes('上單收多$') || 
+      product.name.includes('扣上單 $') ||
+      product.name.includes('扣上單$') ||
+      product.name.trim() === '上單收多$' ||
+      product.name.trim() === '扣上單 $' ||
+      product.name.trim() === '扣上單$';
+
+    const isUnlimited = !!product.unlimitedStock || isSpecialNegativeProduct;
     const remaining = getRemainingStock(product);
-    const isUnlimited = !!product.unlimitedStock;
+
+    if (!isUnlimited && remaining <= 0) {
+      alert(`「${product.name}」目前可用庫存為 0，不能再訂購！`);
+      return;
+    }
 
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
@@ -249,29 +272,34 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       ? rawTieredPrice
       : (parseFloat(String(rawTieredPrice).replace(/[^0-9.-]/g, '')) || 0);
 
-    const isSpecialNegativeProduct = 
-      product.name.includes('上單收多$') || 
-      product.name.includes('扣上單 $') ||
-      product.name.includes('扣上單$') ||
-      product.name.trim() === '上單收多$' ||
-      product.name.trim() === '扣上單 $' ||
-      product.name.trim() === '扣上單$';
-
     if (isSpecialNegativeProduct) {
       tieredPrice = -Math.abs(tieredPrice);
     }
 
-    const defaultQty = isSpecialNegativeProduct ? -1 : (boxInfo ? boxInfo.units : 12);
-    const qtyToAdd = defaultQty;
+    const defaultStep = boxInfo ? boxInfo.units : 12;
+    // Strictly prevent ordering beyond available stock
+    const qtyToAdd = isSpecialNegativeProduct 
+      ? -1 
+      : (!isUnlimited ? Math.min(defaultStep, remaining) : defaultStep);
+
+    if (qtyToAdd <= 0 && !isSpecialNegativeProduct) {
+      alert(`「${product.name}」可用庫存不足！`);
+      return;
+    }
 
     setSelectedItems(prev => {
       const existingIndex = prev.findIndex(item => item.name === product.name);
       if (existingIndex !== -1 && !isSpecialNegativeProduct) {
         const item = prev[existingIndex];
         const step = item.isOuterBox ? (Number(item.unitsPerBox) || (boxInfo ? boxInfo.units : 12)) : 1;
+        const addAmount = !isUnlimited ? Math.min(step, remaining) : step;
+        if (addAmount <= 0) {
+          alert(`「${product.name}」已達到可用庫存上限 (${item.quantity} 件)！`);
+          return prev;
+        }
         return prev.map((it, idx) => {
           if (idx === existingIndex) {
-            return { ...it, quantity: (Number(it.quantity) || 0) + step };
+            return { ...it, quantity: (Number(it.quantity) || 0) + addAmount };
           }
           return it;
         });
@@ -280,10 +308,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       const newItem: OrderItem = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: product.name,
-        // Default to 1 outer (either parsed or fallback 12) per user request
+        // Default to 1 outer (or remaining available stock if less)
         quantity: qtyToAdd,
         price: tieredPrice,
-        isOuterBox: isSpecialNegativeProduct ? false : true, // Start in unit mode for special products, outer mode for others
+        isOuterBox: isSpecialNegativeProduct ? false : true,
         unitsPerBox: boxInfo ? boxInfo.units : 12,
         outerBoxUnit: boxInfo ? boxInfo.unitName : "打"
       };
@@ -339,9 +367,24 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             : (parseFloat(String(merged.price).replace(/[^0-9.-]/g, '')) || 0);
         }
         if (merged.quantity !== undefined) {
-          merged.quantity = typeof merged.quantity === 'number'
+          let q = typeof merged.quantity === 'number'
             ? merged.quantity
             : (parseFloat(String(merged.quantity)) || 0);
+
+          const isSpecialNegativeProduct = 
+            item.name.includes('上單收多$') || 
+            item.name.includes('扣上單 $') ||
+            item.name.includes('扣上單$');
+
+          const prod = products.find(p => p.name === item.name);
+          if (prod && !prod.unlimitedStock && !isSpecialNegativeProduct) {
+            const maxAllowed = getMaxStockForOrder(item.name);
+            if (q > maxAllowed) {
+              alert(`「${item.name}」可用庫存僅剩 ${maxAllowed} 件，不能超過庫存！`);
+              q = maxAllowed;
+            }
+          }
+          merged.quantity = q;
         }
         return merged;
       }
@@ -370,6 +413,20 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const handleFinalSave = () => {
     if (!selectedCustomer || selectedItems.length === 0) return;
     
+    // Strict stock verification before saving
+    for (const item of selectedItems) {
+      const isSpecial = item.name.includes('上單收多$') || item.name.includes('扣上單');
+      if (isSpecial) continue;
+      const prod = products.find(p => p.name === item.name);
+      if (prod && !prod.unlimitedStock) {
+        const maxStock = getMaxStockForOrder(item.name);
+        if (item.quantity > maxStock) {
+          alert(`貨品「${item.name}」訂購數量 (${item.quantity}) 超過了可用庫存 (${maxStock})！請先調減數量後再完成此單。`);
+          return;
+        }
+      }
+    }
+
     const totalAmount = selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
     const activeUserName = selectedRole || 'Unknown';
     const computedId = editingOrder?.id || onGenerateOrderId?.(activeUserName) || `${Date.now()}`;
@@ -671,39 +728,39 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return (
       <div className="h-[100dvh] max-h-[100dvh] w-full bg-white animate-in fade-in duration-300 flex flex-col overflow-hidden">
         {/* Top Layer: Product Search Box */}
-        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2 border-b border-slate-50 shadow-sm">
+        <div className="sticky top-0 z-[55] bg-white/80 backdrop-blur-md px-2 sm:px-4 py-2.5 border-b border-slate-100 shadow-sm">
           <div className="w-full max-w-md mx-auto relative flex items-center gap-2">
             <button 
               onClick={() => setSelectedCustomer(null)}
-              className="p-1.5 -ml-1 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+              className="p-2 -ml-1 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
               title="Back"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="落單"
+                placeholder="落單 (搜尋產品名稱)"
                 value={productSearchQuery}
                 onChange={(e) => setProductSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-300 shadow-inner"
+                className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold text-base sm:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 shadow-inner"
               />
               {productSearchQuery && (
                 <button
                   type="button"
                   onClick={() => setProductSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full transition-colors"
                   title="清除搜尋"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
             <button
               onClick={() => setShowAddProductModal(true)}
-              className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+              className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
               title="登記新貨品"
             >
               <PackagePlus className="w-4 h-4" />
@@ -711,7 +768,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             {onShowOrderList && (
               <button 
                 onClick={onShowOrderList}
-                className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
+                className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
                 title="Order List"
               >
                 <ListOrdered className="w-4 h-4" />
@@ -739,20 +796,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   {productsLoading ? (
                     <div className="p-4 text-center text-slate-300">
                       <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-                      <p className="text-[10px] font-black uppercase tracking-widest">Searching...</p>
+                      <p className="text-xs font-black uppercase tracking-widest">Searching...</p>
                     </div>
                   ) : filteredProducts.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
+                    <div className="p-6 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">
                       找不到產品
                     </div>
                   ) : (
                     <>
-                      <div className="divide-y divide-slate-50">
+                      <div className="divide-y divide-slate-100">
                         {filteredProducts.slice(0, 60).map((p, idx) => {
                           const remaining = getRemainingStock(p);
                           const isUnlimited = !!p.unlimitedStock;
-                          const isNegative = !isUnlimited && remaining < 0;
-                          const isZero = !isUnlimited && remaining === 0;
+                          const isOutOfStock = !isUnlimited && remaining <= 0;
                           
                           const matchingItems = selectedItems.filter(item => item.name === p.name);
                           const isAdded = matchingItems.length > 0;
@@ -767,12 +823,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           return (
                             <div
                               key={idx}
-                              onClick={() => handleAddProduct(p)}
-                              className={`w-full flex items-center justify-between p-3 transition-colors group text-left cursor-pointer ${
-                                isAdded ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-slate-50'
+                              onClick={() => {
+                                if (isOutOfStock) {
+                                  alert(`「${p.name}」目前可用庫存為 0，不能再訂購！`);
+                                  return;
+                                }
+                                handleAddProduct(p);
+                              }}
+                              className={`w-full flex items-center justify-between p-3.5 transition-colors group text-left ${
+                                isOutOfStock ? 'bg-slate-50/70 opacity-60 cursor-not-allowed' : isAdded ? 'bg-blue-50/50 hover:bg-blue-50 cursor-pointer' : 'hover:bg-slate-50 cursor-pointer'
                               }`}
                             >
-                              <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
+                              <div className="flex items-center gap-2.5 flex-1 pr-2 min-w-0">
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -780,55 +842,58 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                     toggleFavorite(p);
                                   }}
                                   className={`p-1 rounded-md transition-colors ${
-                                    isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
+                                    isFavorite(p.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
                                   }`}
                                 >
-                                  <Star className={`w-3.5 h-3.5 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
+                                  <Star className={`w-4 h-4 ${isFavorite(p.name) ? 'fill-current' : ''}`} />
                                 </button>
                                 <div className="flex flex-col min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[11px] font-bold leading-snug break-words text-slate-700 group-hover:text-blue-700">{p.name}</span>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm sm:text-base font-bold leading-snug break-words text-slate-800 group-hover:text-blue-700">{p.name}</span>
                                     {isAdded && (
-                                      <span className="text-[9px] font-black text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                      <span className="text-xs font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                                         已選 {displayQtyText}
                                       </span>
                                     )}
                                   </div>
-                                  <span className={`text-[9px] font-semibold mt-0.5 ${
-                                    isUnlimited ? 'text-slate-400' : isNegative ? 'text-rose-600 font-bold' : isZero ? 'text-amber-600 font-bold' : (remaining < 10) ? 'text-amber-600' : 'text-slate-400'
+                                  <span className={`text-xs font-semibold mt-1 ${
+                                    isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600 font-bold' : (remaining < 10) ? 'text-amber-600 font-bold' : 'text-slate-500'
                                   }`}>
-                                    {isUnlimited ? '庫存: 無限制' : isNegative ? `剩餘庫存: ${remaining} (負數庫存，可落單)` : isZero ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${remaining}`}
+                                    {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (remaining < 10) ? `剩餘庫存: ${remaining} (庫存緊張)` : `剩餘庫存: ${remaining}`}
                                   </span>
                                 </div>
                               </div>
                               <div 
-                                className="flex items-center gap-1.5 flex-shrink-0"
+                                className="flex items-center gap-2 flex-shrink-0"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
                                   type="button"
                                   disabled={!isAdded}
                                   onClick={() => handleReduceProduct(p)}
-                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                                     isAdded 
-                                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/70 active:scale-90 shadow-sm' 
+                                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 active:scale-90 shadow-sm' 
                                       : 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed opacity-40'
                                   }`}
                                   title={isAdded ? "減少或取消選取" : "尚未選取"}
                                 >
-                                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <Minus className="w-4 h-4 stroke-[2.5]" />
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={isOutOfStock}
                                   onClick={() => handleAddProduct(p)}
-                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all active:scale-90 ${
-                                    isAdded 
-                                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30' 
-                                      : 'bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-500 shadow-sm'
+                                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                    isOutOfStock 
+                                      ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed opacity-40' 
+                                      : isAdded 
+                                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 active:scale-90' 
+                                        : 'bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 shadow-sm active:scale-90'
                                   }`}
-                                  title="增加選取"
+                                  title={isOutOfStock ? "庫存不足，無法選取" : "增加選取"}
                                 >
-                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <Plus className="w-4 h-4 stroke-[2.5]" />
                                 </button>
                               </div>
                             </div>
@@ -836,22 +901,22 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         })}
                       </div>
                       {filteredProducts.length > 60 && (
-                        <div className="p-2.5 text-center text-[10px] text-slate-400 bg-slate-50 font-bold border-t border-slate-100">
+                        <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 font-bold border-t border-slate-100">
                           顯示前 60 項結果，請輸入更多關鍵字以縮小搜尋範圍
                         </div>
                       )}
 
                       {/* Sticky Footer: Order Items count & Finish Selection Button */}
-                      <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 p-2.5 px-3.5 flex items-center justify-between shadow-lg mt-auto">
-                        <span className="text-xs text-slate-600 font-bold">
+                      <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 p-3 px-4 flex items-center justify-between shadow-lg mt-auto">
+                        <span className="text-sm text-slate-700 font-bold">
                           已加入訂單：<span className="text-blue-600 font-black">{selectedItems.length}</span> 項貨品
                         </span>
                         <button
                           type="button"
                           onClick={() => setProductSearchQuery('')}
-                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-sm font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          <Check className="w-4 h-4" />
                           <span>完成選擇</span>
                         </button>
                       </div>
@@ -873,86 +938,109 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   initial={{ x: 0, opacity: 1 }}
                   exit={{ x: -20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar touch-pan-y overscroll-contain"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar touch-pan-y overscroll-contain"
                 >
                   <div className="max-w-md mx-auto">
                     <div className="space-y-4">
                       <div className="flex flex-col px-1">
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 min-w-0">
-                            <span className="truncate">{selectedCustomer}</span> 
-                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex-shrink-0">Grade {selectedCustomerInfo?.grade}</span>
-                            <span className="flex items-center justify-center min-w-[16px] h-4 bg-slate-200 text-slate-600 text-[8px] rounded-full px-1 flex-shrink-0">{selectedItems.length}</span>
-                          </h4>
+                        <div className="flex items-center justify-between gap-3 mb-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+                              {selectedCustomer}
+                            </h4>
+                            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                              Grade {selectedCustomerInfo?.grade}
+                            </span>
+                            <span className="flex items-center justify-center min-w-[22px] h-5 bg-slate-200 text-slate-700 text-xs font-bold rounded-full px-1.5 flex-shrink-0">
+                              {selectedItems.length}
+                            </span>
+                          </div>
                           {selectedItems.length > 0 && (
                             <button 
                               onClick={handleFinalSave}
-                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg shadow-md shadow-green-500/20 active:scale-95 transition-all group shrink-0 text-xs font-bold"
+                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl shadow-md shadow-green-600/20 active:scale-95 transition-all group shrink-0 text-sm sm:text-base font-black flex items-center gap-1.5"
                               title="Place Order"
                             >
-                              此單完成
+                              <Check className="w-4 h-4 stroke-[3]" />
+                              <span>此單完成</span>
                             </button>
                           )}
                         </div>
 
+                        {/* Order Summary banner */}
+                        {selectedItems.length > 0 && (
+                          <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl px-3.5 py-2.5 mb-3 shadow-xs">
+                            <div className="flex items-center gap-2 text-slate-700 font-bold text-sm sm:text-base">
+                              <ShoppingCart className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              <span>已選 <strong className="text-blue-700 font-black">{selectedItems.length}</strong> 項貨品</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs sm:text-sm font-bold text-slate-500">總金額:</span>
+                              <span className="text-base sm:text-xl font-black text-blue-700 tabular-nums">
+                                ${totalOrderAmount.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-3">
                           <button 
                             onClick={() => setShowRemarkInput(!showRemarkInput)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border shadow-md ${
+                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border shadow-sm ${
                               remark 
                                 ? 'bg-blue-700 text-white border-blue-700 shadow-blue-700/20' 
-                                : 'bg-blue-500 text-white border-blue-500 hover:bg-blue-600 hover:border-blue-600 shadow-blue-500/20'
+                                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700 shadow-blue-600/20'
                             }`}
                           >
-                            <Check className={`w-3 h-3 ${remark ? 'block' : 'hidden'}`} />
+                            <Check className={`w-3.5 h-3.5 ${remark ? 'block' : 'hidden'}`} />
                             {remark ? '已添加備註' : '+ 備註'}
                           </button>
 
                           {/* Quick Select Remark Checkboxes next to the button */}
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg max-w-full">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl max-w-full">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('收及單')}
                                 onChange={(e) => toggleRemarkKeyword('收及單', e.target.checked)}
-                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
                               />
                               收及單
                             </label>
-                            <div className="h-3 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-3.5 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('明天送')}
                                 onChange={(e) => toggleRemarkKeyword('明天送', e.target.checked)}
-                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
                               />
                               明天送
                             </label>
-                            <div className="h-3 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-3.5 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('COD')}
                                 onChange={(e) => toggleRemarkKeyword('COD', e.target.checked)}
-                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
                               />
                               COD
                             </label>
-                            <div className="h-3 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
+                            <div className="h-3.5 w-px bg-slate-200" />
+                            <label className="flex items-center gap-1.5 cursor-pointer text-sm font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
                               <input
                                 type="checkbox"
                                 checked={remark.includes('原板落, 不搬')}
                                 onChange={(e) => toggleRemarkKeyword('原板落, 不搬', e.target.checked)}
-                                className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
                               />
                               原板落, 不搬
                             </label>
                           </div>
 
                           {remark && (
-                            <button onClick={() => setRemark('')} className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
+                            <button onClick={() => setRemark('')} className="text-xs font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
                           )}
                         </div>
                       </div>
@@ -964,197 +1052,243 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                            className="px-1 mt-2 mb-4 overflow-hidden"
                          >
                            <textarea
-                             placeholder="Input text remarks (Sales name, specific delivery instructions etc.)..."
+                             placeholder="輸入備註 (銷售員姓名、特殊送貨要求等)..."
                              value={remark}
                              onChange={(e) => setRemark(e.target.value)}
-                             className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[60px]"
+                             className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-3.5 py-2.5 text-base font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[70px]"
                            />
                          </motion.div>
                        )}
  
                        {selectedItems.length === 0 ? (
-                         <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4 text-center">
-                           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
-                             <Package className="w-8 h-8 opacity-20" />
+                         <div className="p-16 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300 gap-3 mt-4 text-center">
+                           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                             <Package className="w-8 h-8 opacity-30" />
                            </div>
-                           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No items selected</p>
-                           <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-relaxed">Search products or add from favorites</p>
+                           <p className="text-sm font-black uppercase tracking-wider text-slate-400">尚未選取任何貨品</p>
+                           <p className="text-xs font-bold text-slate-400">請在上方搜尋欄輸入貨品名稱，或在常用貨品中選取</p>
                          </div>
                        ) : (
-                         <div className="space-y-4">
-                           {selectedItems.map((item) => (
-                             <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-2 shadow-sm hover:shadow-md transition-all group">
-                               <div className="flex items-center justify-between gap-2 mb-2">
-                                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                   <button
-                                     onClick={() => {
-                                       const prod = products.find(p => p.name === item.name);
-                                       if (prod) toggleFavorite(prod);
-                                     }}
-                                     className={`p-1 rounded-md transition-colors flex-shrink-0 ${
-                                       isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'
-                                     }`}
-                                   >
-                                     <Star className={`w-3.5 h-3.5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
-                                   </button>
-                                   <div className="flex flex-col min-w-0">
-                                     <h5 className="text-[11px] font-black text-slate-900 leading-tight truncate">{item.name}</h5>
-                                     {(() => {
-                                       const prod = products.find(p => p.name === item.name);
-                                       if (!prod || prod.unlimitedStock) return null;
-                                       const rem = getRemainingStock(prod);
-                                       return (
-                                         <span className={`text-[9px] font-medium mt-0.5 ${rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
-                                           {rem < 0 ? `剩餘庫存: ${rem} (負數庫存)` : rem === 0 ? '剩餘庫存: 0 (缺貨)' : `剩餘庫存: ${rem}`}
+                         <div className="space-y-3.5">
+                           {selectedItems.map((item) => {
+                             const prod = products.find(p => p.name === item.name);
+                             const isUnlimited = !prod || !!prod.unlimitedStock;
+                             const rem = prod ? getRemainingStock(prod) : Infinity;
+                             const isStockExhausted = !isUnlimited && rem <= 0;
+                             const otherReserved = otherOrdersReservedMap.get(item.name) || 0;
+                             const maxStockForThisOrder = prod && !prod.unlimitedStock ? Math.max(0, (prod.stock ?? 0) - otherReserved) : Infinity;
+
+                             return (
+                               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:shadow-md transition-all group">
+                                 <div className="flex items-center justify-between gap-2 mb-2.5">
+                                   <div className="flex items-center gap-2 flex-1 min-w-0">
+                                     <button
+                                       type="button"
+                                       onClick={() => {
+                                         if (prod) toggleFavorite(prod);
+                                       }}
+                                       className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                                         isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
+                                       }`}
+                                     >
+                                       <Star className={`w-4 h-4 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
+                                     </button>
+                                     <div className="flex flex-col min-w-0">
+                                       <h5 className="text-sm sm:text-base font-bold text-slate-900 leading-snug break-words">{item.name}</h5>
+                                       {!isUnlimited && (
+                                         <span className={`text-xs font-semibold mt-0.5 ${rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-rose-600 font-bold' : rem < 10 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
+                                           {rem <= 0 ? '已達庫存上限 (剩餘可用: 0)' : `剩餘可用庫存: ${rem}`}
                                          </span>
-                                       );
-                                     })()}
+                                       )}
+                                     </div>
+                                   </div>
+                                   {item.unitsPerBox && (
+                                     <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           const targetQty = Math.min(1, maxStockForThisOrder);
+                                           handleUpdateItem(item.id, { isOuterBox: false, quantity: targetQty });
+                                         }}
+                                         className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                                           !item.isOuterBox 
+                                             ? 'bg-white text-blue-600 shadow-sm' 
+                                             : 'text-slate-500 hover:text-slate-700'
+                                         }`}
+                                       >
+                                         單位
+                                       </button>
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           const boxQty = item.unitsPerBox || 12;
+                                           const targetQty = Math.min(boxQty, maxStockForThisOrder);
+                                           if (maxStockForThisOrder < boxQty && !isUnlimited) {
+                                             alert(`「${item.name}」可用庫存僅剩 ${maxStockForThisOrder} 件，已調整為 ${targetQty} 件。`);
+                                           }
+                                           handleUpdateItem(item.id, { isOuterBox: true, quantity: targetQty });
+                                         }}
+                                         className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                                           item.isOuterBox 
+                                             ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
+                                             : 'text-slate-500 hover:text-slate-700'
+                                         }`}
+                                       >
+                                         {item.outerBoxUnit || '箱'}
+                                       </button>
+                                     </div>
+                                   )}
+                                 </div>
+
+                                 <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                                   {/* Quantity Stepper */}
+                                   <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-28 flex-shrink-0">
+                                     <button 
+                                       type="button"
+                                       onClick={() => {
+                                         const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
+                                         const curQty = Number(item.quantity) || 0;
+                                         handleUpdateItem(item.id, { quantity: curQty - step });
+                                       }}
+                                       className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                       title="減少數量"
+                                     >
+                                       <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                     </button>
+                                     <input
+                                       type="number"
+                                       value={item.quantity}
+                                       max={!isUnlimited ? maxStockForThisOrder : undefined}
+                                       onChange={(e) => {
+                                         let val = parseFloat(e.target.value) || 0;
+                                         if (!isUnlimited && val > maxStockForThisOrder) {
+                                           alert(`「${item.name}」最多只可訂購 ${maxStockForThisOrder} 件 (可用庫存不足)！`);
+                                           val = maxStockForThisOrder;
+                                         }
+                                         handleUpdateItem(item.id, { quantity: val });
+                                       }}
+                                       className="w-full text-center bg-transparent text-base sm:text-lg font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                     />
+                                     <button 
+                                       type="button"
+                                       disabled={isStockExhausted}
+                                       onClick={() => {
+                                         const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
+                                         const curQty = Number(item.quantity) || 0;
+                                         if (!isUnlimited) {
+                                           if (rem <= 0) {
+                                             alert(`「${item.name}」已達到可用庫存上限！`);
+                                             return;
+                                           }
+                                           const addAmount = Math.min(step, rem);
+                                           handleUpdateItem(item.id, { quantity: curQty + addAmount });
+                                         } else {
+                                           handleUpdateItem(item.id, { quantity: curQty + step });
+                                         }
+                                       }}
+                                       className={`p-2 transition-colors ${
+                                         isStockExhausted 
+                                           ? 'text-slate-200 cursor-not-allowed' 
+                                           : 'text-slate-500 hover:text-blue-600 hover:bg-slate-100'
+                                       }`}
+                                       title={isStockExhausted ? "庫存不足，無法再增加" : "增加數量"}
+                                     >
+                                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                     </button>
+                                   </div>
+
+                                   {/* Price Adjustment */}
+                                   <div className="flex items-center justify-center flex-shrink-0">
+                                     <div className="flex items-center gap-1">
+                                       <button 
+                                         type="button"
+                                         onClick={() => {
+                                           const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
+                                           const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
+                                           const newPrice = Math.round((currentPrice - 1) * 100) / 100;
+                                           handleUpdateItem(item.id, { price: newPrice });
+                                           setTempPrices(prev => {
+                                             const copy = { ...prev };
+                                             delete copy[item.id];
+                                             return copy;
+                                           });
+                                         }}
+                                         className="p-1.5 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         title="減$1"
+                                       >
+                                         <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                       </button>
+
+                                       <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 px-1.5 py-1 w-20 flex-shrink-0">
+                                         <span className="text-slate-400 text-xs font-bold mr-0.5 shrink-0">$</span>
+                                         <input
+                                           type="text"
+                                           inputMode="decimal"
+                                           value={tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price}
+                                           onChange={(e) => {
+                                             const val = e.target.value;
+                                             setTempPrices(prev => ({ ...prev, [item.id]: val }));
+                                             const parsed = parseFloat(val);
+                                             if (!isNaN(parsed)) {
+                                               handleUpdateItem(item.id, { price: parsed });
+                                             }
+                                           }}
+                                           onBlur={() => {
+                                             if (tempPrices[item.id] !== undefined) {
+                                               const parsed = parseFloat(tempPrices[item.id]);
+                                               if (!isNaN(parsed)) {
+                                                 handleUpdateItem(item.id, { price: parsed });
+                                               }
+                                             }
+                                             setTempPrices(prev => {
+                                               const copy = { ...prev };
+                                               delete copy[item.id];
+                                               return copy;
+                                             });
+                                           }}
+                                           className="w-full text-center bg-transparent text-base sm:text-lg font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                         />
+                                       </div>
+
+                                       <button 
+                                         type="button"
+                                         onClick={() => {
+                                           const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
+                                           const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
+                                           const newPrice = Math.round((currentPrice + 1) * 100) / 100;
+                                           handleUpdateItem(item.id, { price: newPrice });
+                                           setTempPrices(prev => {
+                                             const copy = { ...prev };
+                                             delete copy[item.id];
+                                             return copy;
+                                           });
+                                         }}
+                                         className="p-1.5 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         title="加$1"
+                                       >
+                                         <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                       </button>
+                                     </div>
+                                   </div>
+
+                                   {/* Subtotal & Delete */}
+                                   <div className="flex items-center justify-end gap-2 flex-shrink-0">
+                                     <span className="text-sm sm:text-base font-black text-blue-600 block tabular-nums leading-none text-right">
+                                       ${(item.quantity * item.price).toLocaleString()}
+                                     </span>
+                                     <button 
+                                       type="button"
+                                       onClick={() => handleRemoveItem(item.id)}
+                                       className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+                                       title="刪除"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </button>
                                    </div>
                                  </div>
-                                 {item.unitsPerBox && (
-                                   <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
-                                     <button
-                                       onClick={() => handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 })}
-                                       className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
-                                         !item.isOuterBox 
-                                           ? 'bg-white text-blue-600 shadow-sm' 
-                                           : 'text-slate-400 hover:text-slate-600'
-                                       }`}
-                                     >
-                                       單位
-                                     </button>
-                                     <button
-                                       onClick={() => handleUpdateItem(item.id, { isOuterBox: true, quantity: item.unitsPerBox || 12 })}
-                                       className={`px-2 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
-                                         item.isOuterBox 
-                                           ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
-                                           : 'text-slate-400 hover:text-slate-600'
-                                       }`}
-                                     >
-                                       {item.outerBoxUnit || '箱'}
-                                     </button>
-                                   </div>
-                                 )}
                                </div>
- 
-                                <div className="flex items-center justify-between gap-1">
-                                  <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 overflow-hidden w-20 flex-shrink-0">
-                                    <button 
-                                      onClick={() => {
-                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
-                                        const isSpecial = item.name.includes("上單收多$") || item.name.includes("扣上單");
-                                        const curQty = Number(item.quantity) || 0;
-                                        handleUpdateItem(item.id, { quantity: isSpecial ? (curQty - step) : (curQty - step) });
-                                      }}
-                                      className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
-                                    >
-                                      <Minus className="w-2.5 h-2.5" />
-                                    </button>
-                                    <input
-                                      type="number"
-                                      value={item.quantity}
-                                      onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
-                                      className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                    />
-                                    <button 
-                                      onClick={() => {
-                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
-                                        const curQty = Number(item.quantity) || 0;
-                                        handleUpdateItem(item.id, { quantity: curQty + step });
-                                      }}
-                                      className="px-1 py-1 text-slate-400 hover:text-blue-600 transition-colors"
-                                    >
-                                      <Plus className="w-2.5 h-2.5" />
-                                    </button>
-                                  </div>
-
-                                  <div className="flex-1 flex items-center justify-center">
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
-                                          const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
-                                          const newPrice = Math.round((currentPrice - 1) * 100) / 100;
-                                          handleUpdateItem(item.id, { price: newPrice });
-                                          setTempPrices(prev => {
-                                            const copy = { ...prev };
-                                            delete copy[item.id];
-                                            return copy;
-                                          });
-                                        }}
-                                        className="p-1 text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 transition-colors flex-shrink-0 active:scale-95"
-                                        title="減$1"
-                                      >
-                                        <Minus className="w-2.5 h-2.5" />
-                                      </button>
-
-                                      <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-1 py-1 w-16 flex-shrink-0">
-                                        <span className="text-slate-400 text-[8px] font-bold mr-0.5 shrink-0">$</span>
-                                        <input
-                                          type="text"
-                                          inputMode="decimal"
-                                          value={tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setTempPrices(prev => ({ ...prev, [item.id]: val }));
-                                            const parsed = parseFloat(val);
-                                            if (!isNaN(parsed)) {
-                                              handleUpdateItem(item.id, { price: parsed });
-                                            }
-                                          }}
-                                          onBlur={() => {
-                                            if (tempPrices[item.id] !== undefined) {
-                                              const parsed = parseFloat(tempPrices[item.id]);
-                                              if (!isNaN(parsed)) {
-                                                handleUpdateItem(item.id, { price: parsed });
-                                              }
-                                            }
-                                            setTempPrices(prev => {
-                                              const copy = { ...prev };
-                                              delete copy[item.id];
-                                              return copy;
-                                            });
-                                          }}
-                                          className="w-full text-center bg-transparent text-base font-bold text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                        />
-                                      </div>
-
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          const rawVal = tempPrices[item.id] !== undefined ? tempPrices[item.id] : item.price;
-                                          const currentPrice = typeof rawVal === 'number' ? rawVal : (parseFloat(String(rawVal).replace(/[^0-9.-]/g, '')) || 0);
-                                          const newPrice = Math.round((currentPrice + 1) * 100) / 100;
-                                          handleUpdateItem(item.id, { price: newPrice });
-                                          setTempPrices(prev => {
-                                            const copy = { ...prev };
-                                            delete copy[item.id];
-                                            return copy;
-                                          });
-                                        }}
-                                        className="p-1 text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 transition-colors flex-shrink-0 active:scale-95"
-                                        title="加$1"
-                                      >
-                                        <Plus className="w-2.5 h-2.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center justify-end gap-1 flex-shrink-0">
-                                    <span className="text-[10px] font-black text-blue-600 block tabular-nums leading-none truncate text-right">
-                                      ${(item.quantity * item.price).toLocaleString()}
-                                    </span>
-                                    <button 
-                                      onClick={() => handleRemoveItem(item.id)}
-                                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-300 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                </div>
-                             </div>
-                           ))}
+                             );
+                           })}
                          </div>
                        )}
                     </div>
@@ -1167,63 +1301,75 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-20 custom-scrollbar touch-pan-y overscroll-contain"
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar touch-pan-y overscroll-contain"
                 >
                   <div className="max-w-md mx-auto">
-                    <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
-                       Favorites
+                    <h4 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-widest mb-4 px-1 text-center">
+                       常用貨品 (Favorites)
                     </h4>
                      
                     {favorites.length === 0 ? (
-                       <div className="p-20 border-2 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-200 gap-4 mt-4 text-center">
+                       <div className="p-16 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300 gap-3 mt-4 text-center">
                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
-                           <Star className="w-8 h-8 opacity-20" />
+                           <Star className="w-8 h-8 opacity-30" />
                          </div>
-                         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">No favorites yet</p>
-                         <p className="text-[8px] font-bold text-slate-300 leading-relaxed max-w-[150px]">Star products in search to save them here</p>
+                         <p className="text-sm font-black uppercase tracking-wider text-slate-400">尚無常用貨品</p>
+                         <p className="text-xs font-bold text-slate-400 leading-relaxed max-w-[200px]">在搜尋時點擊星星圖示即可將產品加入常用貨品</p>
                        </div>
                     ) : (
-                       <div className="grid grid-cols-1 gap-2">
-                         {favorites.map((p, idx) => (
-                           <div
-                             key={idx}
-                             className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-500/30 transition-all group"
-                           >
-                             <div className="flex items-center gap-2 flex-1 truncate pr-2">
-                               <button
-                                 onClick={() => toggleFavorite(p)}
-                                 className="p-1 rounded-md text-yellow-400 transition-colors"
-                               >
-                                 <Star className="w-3.5 h-3.5 fill-current" />
-                               </button>
-                               <div className="flex flex-col min-w-0 align-left text-left">
-                                 <span className="text-[11px] font-bold leading-snug truncate text-slate-700">{p.name}</span>
-                                 {(() => {
-                                   if (p.unlimitedStock) {
-                                     return <span className="text-[9px] font-semibold mt-0.5 text-slate-400">庫存: 無限制</span>;
-                                   }
-                                   const rem = getRemainingStock(p);
-                                   return (
-                                     <span className={`text-[9px] font-semibold mt-0.5 ${
-                                       rem < 0 ? 'text-rose-600 font-bold' : rem === 0 ? 'text-amber-600 font-bold' : rem < 10 ? 'text-amber-600' : 'text-slate-400'
-                                     }`}>
-                                       {rem < 0 ? `剩餘庫存: ${rem} (負數庫存，可落單)` : rem === 0 ? '剩餘庫存: 0 (缺貨，可繼續落單)' : `剩餘庫存: ${rem}`}
-                                     </span>
-                                   );
-                                 })()}
-                               </div>
-                             </div>
-                             <button
-                               onClick={() => {
-                                 handleAddProduct(p);
-                                 setActiveTab('order');
-                               }}
-                               className="p-1.5 rounded-lg active:scale-95 transition-all flex-shrink-0 text-white bg-blue-600 shadow-lg shadow-blue-600/20"
+                       <div className="grid grid-cols-1 gap-2.5">
+                         {favorites.map((p, idx) => {
+                           const rem = getRemainingStock(p);
+                           const isOutOfStock = !p.unlimitedStock && rem <= 0;
+                           return (
+                             <div
+                               key={idx}
+                               className="w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl hover:border-blue-500/30 transition-all group"
                              >
-                               <Plus className="w-3 h-3" />
-                             </button>
-                           </div>
-                         ))}
+                               <div className="flex items-center gap-2.5 flex-1 truncate pr-2">
+                                 <button
+                                   type="button"
+                                   onClick={() => toggleFavorite(p)}
+                                   className="p-1 rounded-md text-yellow-400 transition-colors"
+                                 >
+                                   <Star className="w-4 h-4 fill-current" />
+                                 </button>
+                                 <div className="flex flex-col min-w-0 align-left text-left">
+                                   <span className="text-sm sm:text-base font-bold leading-snug truncate text-slate-800">{p.name}</span>
+                                   {p.unlimitedStock ? (
+                                     <span className="text-xs font-semibold mt-0.5 text-slate-400">庫存: 無限制</span>
+                                   ) : (
+                                     <span className={`text-xs font-semibold mt-0.5 ${
+                                       isOutOfStock ? 'text-rose-600 font-bold' : rem < 10 ? 'text-amber-600 font-bold' : 'text-slate-500'
+                                     }`}>
+                                       {isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
+                                     </span>
+                                   )}
+                                 </div>
+                               </div>
+                               <button
+                                 type="button"
+                                 disabled={isOutOfStock}
+                                 onClick={() => {
+                                   if (isOutOfStock) {
+                                     alert(`「${p.name}」目前可用庫存為 0，無法落單！`);
+                                     return;
+                                   }
+                                   handleAddProduct(p);
+                                   setActiveTab('order');
+                                 }}
+                                 className={`p-2 rounded-xl active:scale-95 transition-all flex-shrink-0 text-white ${
+                                   isOutOfStock 
+                                     ? 'bg-slate-300 cursor-not-allowed shadow-none' 
+                                     : 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20'
+                                 }`}
+                                 title={isOutOfStock ? "庫存不足，無法選取" : "加入訂單"}
+                               >
+                                 <Plus className="w-4 h-4 stroke-[2.5]" />
+                               </button>
+                             </div>
+                           );
+                         })}
                        </div>
                     )}
                   </div>
@@ -1234,7 +1380,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
           {/* Floating Bottom Tab Switcher (Slide Bar) */}
           <div className="fixed bottom-4 right-4 sm:left-1/2 sm:-translate-x-1/2 z-30 flex justify-center pointer-events-none">
-            <div className="w-full max-w-[240px] sm:max-w-[280px] bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl shadow-slate-300/50 p-1 flex items-center relative pointer-events-auto">
+            <div className="w-full max-w-[260px] sm:max-w-[300px] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-300/50 p-1 flex items-center relative pointer-events-auto">
               {/* Sliding highlight background */}
               <div className="absolute inset-y-1 left-1 bottom-1 top-1 pointer-events-none" style={{ width: 'calc(50% - 4px)' }}>
                 <motion.div
@@ -1251,24 +1397,24 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('order')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider relative z-10 transition-colors duration-300 ${
-                  activeTab === 'order' ? 'text-white' : 'text-slate-400 hover:text-slate-600'
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-black tracking-wider relative z-10 transition-colors duration-300 ${
+                  activeTab === 'order' ? 'text-white' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                Order ({selectedItems.length})
+                <ShoppingCart className="w-4 h-4" />
+                訂單 ({selectedItems.length})
               </button>
 
               {/* Favorites Button */}
               <button
                 type="button"
                 onClick={() => setActiveTab('favorites')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider relative z-10 transition-colors duration-300 ${
-                  activeTab === 'favorites' ? 'text-white' : 'text-slate-400 hover:text-slate-600'
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-black tracking-wider relative z-10 transition-colors duration-300 ${
+                  activeTab === 'favorites' ? 'text-white' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <Star className="w-3.5 h-3.5" />
-                Favorites ({favorites.length})
+                <Star className="w-4 h-4" />
+                常用
               </button>
             </div>
           </div>
