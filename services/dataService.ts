@@ -465,16 +465,14 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
         };
 
         const isUnlimited = row[unlimitedStockIdx]?.toString().trim() === '1';
+        // Col B (header 'Product ID' of 'raw' tab) is the definitive Product ID
         const prodId = row[productIdIdx]?.toString().trim() || '';
         let stockVal: number | undefined = undefined;
         if (row[stockIdx] !== undefined && row[stockIdx] !== null && row[stockIdx].toString().trim() !== '') {
           stockVal = parseNum(row[stockIdx]);
         }
         const listVal = row[listIdx] !== undefined && row[listIdx] !== null ? row[listIdx].toString().trim() : '';
-        const rawImgField = imageUrlsIdx !== -1 && row[imageUrlsIdx] ? row[imageUrlsIdx].toString().trim() : '';
-        const rawImgMatch = rawImgField.match(/https?:\/\/[^\s,"'>|]+/);
-        const rawImg = rawImgMatch ? rawImgMatch[0] : (rawImgField ? rawImgField.split('|')[0].trim() : '');
-        const serviceImg = prodId ? `https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/${encodeURIComponent(prodId)}/image` : '';
+        const serviceImg = prodId ? `/api/product-image/${encodeURIComponent(prodId)}` : '';
 
         if (trimmed.length > 1 && !productMap.has(trimmed)) {
           productMap.set(trimmed, {
@@ -489,8 +487,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             unlimitedStock: isUnlimited,
             stock: stockVal,
             list: listVal,
-            imageUrl: serviceImg || rawImg,
-            rawImageUrl: rawImg
+            imageUrl: serviceImg || undefined,
+            rawImageUrl: undefined // Do not use mismatched Boutir URLs; pictures are matched strictly by Product ID
           });
         }
       }
@@ -526,9 +524,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             const priceA = p.priceA !== undefined && p.priceA !== '' ? parseNum(p.priceA) : (p.prices?.A !== undefined ? parseNum(p.prices.A) : (csvData?.prices?.A ?? numPrice));
             const priceB = p.priceB !== undefined && p.priceB !== '' ? parseNum(p.priceB) : (p.prices?.B !== undefined ? parseNum(p.prices.B) : (csvData?.prices?.B ?? numPrice));
             const priceC = p.priceC !== undefined && p.priceC !== '' ? parseNum(p.priceC) : (p.prices?.C !== undefined ? parseNum(p.prices.C) : (csvData?.prices?.C ?? numPrice));
-            const resolvedId = p.id !== undefined ? p.id : (csvData ? csvData.id : undefined);
-            const resolvedRawImg = p.rawImageUrl || (csvData ? csvData.rawImageUrl : undefined);
-            const resolvedImg = p.imageUrl || (csvData ? csvData.imageUrl : (resolvedId ? `https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/${encodeURIComponent(resolvedId)}/image` : undefined));
+            const resolvedId = (p.id && !p.id.startsWith('row-')) ? p.id : (csvData ? csvData.id : p.id);
+            const resolvedImg = resolvedId ? `/api/product-image/${encodeURIComponent(resolvedId)}` : undefined;
             return {
               ...p,
               id: resolvedId,
@@ -538,7 +535,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined),
               list: p.list !== undefined && p.list !== null ? String(p.list).trim() : (csvData ? csvData.list : undefined),
               imageUrl: resolvedImg,
-              rawImageUrl: resolvedRawImg
+              rawImageUrl: undefined
             };
           });
 
@@ -557,40 +554,6 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     } catch (liveError) {
       console.warn('Live GAS getProducts timed out or unavailable, using published master CSV products:', liveError);
     }
-  }
-
-  // 2b. Attempt to fetch extra image attributes from the Product List API
-  try {
-    const imgApiRes = await fetchWithTimeout(`${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products`, { method: 'GET' }, 2500);
-    if (imgApiRes.ok) {
-      const imgData = await imgApiRes.json();
-      const items = Array.isArray(imgData) ? imgData : (Array.isArray(imgData?.products) ? imgData.products : []);
-      if (items.length > 0) {
-        const imgMap = new Map<string, { id?: string; rawUrl?: string }>();
-        items.forEach((it: any) => {
-          const rawUrl = it.extraAttributes?.['Image URLs'] || it.imageUrls || it.imageUrl;
-          if (it.name) imgMap.set(it.name.trim(), { id: it.id, rawUrl });
-          if (it.id) imgMap.set(it.id.trim(), { id: it.id, rawUrl });
-        });
-
-        csvProducts = csvProducts.map(p => {
-          const match = imgMap.get(p.name) || (p.id ? imgMap.get(p.id) : undefined);
-          if (match) {
-            const rawUrl = match.rawUrl || p.rawImageUrl;
-            const prodId = match.id || p.id;
-            return {
-              ...p,
-              id: prodId,
-              rawImageUrl: rawUrl,
-              imageUrl: prodId ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${encodeURIComponent(prodId)}/image` : (rawUrl || p.imageUrl)
-            };
-          }
-          return p;
-        });
-      }
-    }
-  } catch (imgApiErr) {
-    // Graceful fallback to existing parsed CSV / GAS image data
   }
 
   if (csvProducts.length > 0) {
@@ -613,11 +576,12 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
 
 export const PRODUCT_IMAGE_SERVICE_BASE_URL = 'https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app';
 
-export const getProductImageUrl = (product: { id?: string; imageUrl?: string; rawImageUrl?: string }): { primary: string; fallback: string } => {
-  const primary = product.id
-    ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${encodeURIComponent(product.id)}/image`
-    : (product.imageUrl || '');
-  const fallback = product.rawImageUrl || (product.imageUrl && product.imageUrl !== primary ? product.imageUrl : '');
+export const getProductImageUrl = (product: { id?: string; imageUrl?: string }): { primary: string; fallback: string } => {
+  const prodId = (product.id || '').trim();
+  const primary = prodId ? `/api/product-image/${encodeURIComponent(prodId)}` : (product.imageUrl || '');
+  const fallback = prodId && PRODUCT_IMAGE_SERVICE_BASE_URL
+    ? `${PRODUCT_IMAGE_SERVICE_BASE_URL.replace(/\/$/, '')}/api/products/${encodeURIComponent(prodId)}/image`
+    : '';
   return { primary, fallback };
 };
 

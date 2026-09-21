@@ -240,6 +240,58 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Product image proxy endpoint - strictly matches Product ID (Col B from 'raw' sheet)
+  app.get("/api/product-image/:id", async (req, res) => {
+    const id = (req.params.id || "").trim();
+    if (!id) {
+      res.status(400).json({ error: "Missing product id" });
+      return;
+    }
+
+    // 1. Check local images directory in data/images
+    const localImgDir = path.join(process.cwd(), "data", "images");
+    const extensions = ["", ".jpg", ".png", ".jpeg", ".webp"];
+    for (const ext of extensions) {
+      const candidate = path.join(localImgDir, `${id}${ext}`);
+      if (fs.existsSync(candidate)) {
+        try {
+          const stat = fs.statSync(candidate);
+          if (stat.isFile()) {
+            res.setHeader("Cache-Control", "public, max-age=86400");
+            res.sendFile(candidate);
+            return;
+          }
+        } catch {}
+      }
+    }
+
+    // 2. Fetch from product image service if configured or accessible
+    const serviceBase = (process.env.PRODUCT_IMAGE_BASE_URL || "https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app").replace(/\/$/, "");
+    const remoteUrl = `${serviceBase}/api/products/${encodeURIComponent(id)}/image`;
+
+    try {
+      const remoteRes = await fetch(remoteUrl, {
+        signal: AbortSignal.timeout(3500),
+      });
+
+      if (remoteRes.ok) {
+        const contentType = remoteRes.headers.get("content-type") || "image/jpeg";
+        if (contentType.startsWith("image/")) {
+          const buffer = await remoteRes.arrayBuffer();
+          res.setHeader("Content-Type", contentType);
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          res.send(Buffer.from(buffer));
+          return;
+        }
+      }
+    } catch {
+      // Remote fetch failed or timed out
+    }
+
+    // 3. Not found - send 404 so client displays placeholder instead of mismatched picture
+    res.status(404).json({ error: `Image not found for product ID ${id}` });
+  });
+
   // Get orders directly from Trade_log and Trade_log_admin tabs of Product_list
   app.get("/api/trade-orders", async (req, res) => {
     try {

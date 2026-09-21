@@ -16,18 +16,29 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
   className = '',
   allowZoom = true,
 }) => {
-  const [useFallback, setUseFallback] = useState(false);
+  const [attemptIndex, setAttemptIndex] = useState(0);
   const [hasError, setHasError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
 
-  // Compute primary and fallback URLs
-  const serviceUrl = product.id
-    ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${encodeURIComponent(product.id)}/image`
-    : '';
-  const rawUrl = product.rawImageUrl || (product.imageUrl && product.imageUrl !== serviceUrl ? product.imageUrl : '');
+  // The filename of the pic is strictly the Product ID from Col B of the 'raw' sheet
+  const prodId = (product.id || '').trim();
 
-  // Current URL to display
-  const currentSrc = !useFallback && serviceUrl ? serviceUrl : rawUrl;
+  // List of candidate image URLs based strictly on Product ID
+  const candidateUrls = React.useMemo(() => {
+    if (!prodId) return [];
+    const urls: string[] = [];
+    // 1. Local backend proxy that checks local files and remote service
+    urls.push(`/api/product-image/${encodeURIComponent(prodId)}`);
+    // 2. Direct service endpoint if accessible
+    if (PRODUCT_IMAGE_SERVICE_BASE_URL) {
+      urls.push(`${PRODUCT_IMAGE_SERVICE_BASE_URL.replace(/\/$/, '')}/api/products/${encodeURIComponent(prodId)}/image`);
+    }
+    return urls;
+  }, [prodId]);
+
+  const currentSrc = !hasError && candidateUrls.length > 0 && attemptIndex < candidateUrls.length
+    ? candidateUrls[attemptIndex]
+    : '';
 
   // Size styling
   const sizeClasses = {
@@ -36,11 +47,11 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
     lg: 'w-20 h-20 min-w-[80px] min-h-[80px]',
   }[size];
 
-  if (!currentSrc || hasError) {
+  if (!prodId || !currentSrc || hasError) {
     return (
       <div
         className={`${sizeClasses} rounded-lg bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-300 flex-shrink-0 ${className}`}
-        title="暫無圖片"
+        title={prodId ? `暫無圖片 (貨品 ID: ${prodId})` : "暫無圖片"}
       >
         <ImageIcon className="w-5 h-5 opacity-60" />
       </div>
@@ -59,7 +70,7 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
         className={`relative ${sizeClasses} rounded-lg bg-white border border-slate-200/90 p-0.5 shadow-xs overflow-hidden flex-shrink-0 flex items-center justify-center group/thumb ${
           allowZoom ? 'cursor-zoom-in hover:border-blue-400' : ''
         } ${className}`}
-        title={allowZoom ? '點擊放大查看貨品圖片' : product.name}
+        title={allowZoom ? `點擊放大查看貨品圖片 (ID: ${prodId})` : product.name}
       >
         <img
           src={currentSrc}
@@ -68,8 +79,8 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
           loading="lazy"
           className="w-full h-full object-contain rounded transition-transform group-hover/thumb:scale-105"
           onError={() => {
-            if (!useFallback && rawUrl && rawUrl !== serviceUrl) {
-              setUseFallback(true);
+            if (attemptIndex + 1 < candidateUrls.length) {
+              setAttemptIndex(prev => prev + 1);
             } else {
               setHasError(true);
             }

@@ -470,6 +470,7 @@ function doGet(e) {
       var values = sheet.getDataRange().getValues();
       var headerRowIdx = 0;
       var titleIdx = 2; // Col C (index 2) is the item title
+      var productIdIdx = 1; // Col B (header 'Product ID')
       var goldIdx = 17; // Col R
       var silverIdx = 18; // Col S
       var basicIdx = 19; // Col T
@@ -494,7 +495,8 @@ function doGet(e) {
           for (var j = 0; j < row.length; j++) {
             var cellStr = (row[j] || '').toString().toLowerCase().trim();
             var normed = cellStr.replace(/[\s_-]/g, '');
-            if (cellStr.indexOf('gold') !== -1 || cellStr.indexOf('a價') !== -1 || cellStr.indexOf('a 價') !== -1 || cellStr === 'a' || cellStr === 'a價') goldIdx = j;
+            if (normed === 'productid' || cellStr === 'product id' || normed === 'sku') productIdIdx = j;
+            else if (cellStr.indexOf('gold') !== -1 || cellStr.indexOf('a價') !== -1 || cellStr.indexOf('a 價') !== -1 || cellStr === 'a' || cellStr === 'a價') goldIdx = j;
             else if (cellStr.indexOf('silver') !== -1 || cellStr.indexOf('b價') !== -1 || cellStr.indexOf('b 價') !== -1 || cellStr === 'b' || cellStr === 'b價') silverIdx = j;
             else if (cellStr.indexOf('basic') !== -1 || cellStr.indexOf('c價') !== -1 || cellStr.indexOf('c 價') !== -1 || cellStr === 'c' || cellStr === 'c價') basicIdx = j;
             else if (normed === 'price') priceIdx = j;
@@ -519,7 +521,7 @@ function doGet(e) {
       for (var rowIdx = headerRowIdx + 1; rowIdx < values.length; rowIdx++) {
         var row = values[rowIdx];
         var name = (row[titleIdx] || "").toString().trim();
-        var sku = (row[1] || "").toString().trim();
+        var sku = (row[productIdIdx] || row[1] || "").toString().trim();
         var id = sku || ("row-" + rowIdx);
         
         if (name) {
@@ -575,6 +577,27 @@ function doGet(e) {
       }
       
       return ContentService.createTextOutput(JSON.stringify(productsList))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 3. Action: getProductImage (Direct Drive Image Lookup by Product ID Col B)
+    if (action === 'getProductImage') {
+      var id = e.parameter ? e.parameter.id : null;
+      if (!id) {
+        return ContentService.createTextOutput(JSON.stringify({ found: false, error: 'missing id' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      var foundUrl = null;
+      var fileNamesToTry = [id, id + '.jpg', id + '.png', id + '.jpeg', id + '.webp'];
+      for (var fIdx = 0; fIdx < fileNamesToTry.length; fIdx++) {
+        var files = DriveApp.getFilesByName(fileNamesToTry[fIdx]);
+        if (files.hasNext()) {
+          var file = files.next();
+          foundUrl = "https://lh3.googleusercontent.com/d/" + file.getId();
+          break;
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ found: !!foundUrl, url: foundUrl, id: id }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     
