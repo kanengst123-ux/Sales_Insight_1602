@@ -412,6 +412,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     let unlimitedStockIdx = 27; // Col AB
     let stockIdx = 28; // Col AC
     let listIdx = 31; // Col AF (header: list)
+    let imageUrlsIdx = 38; // Col AM (header: Image URLs)
 
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
       const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
@@ -423,6 +424,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
         });
         if (pIdIdx !== -1) productIdIdx = pIdIdx;
+        const imgIdx = rows[i].findIndex(cell => {
+          const cellStr = (cell || '').toLowerCase().trim();
+          return cellStr === 'image urls' || cellStr === 'image url' || cellStr === 'image';
+        });
+        if (imgIdx !== -1) imageUrlsIdx = imgIdx;
         const rIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('gold'));
         if (rIdx !== -1) goldIdx = rIdx;
         const sIdx = rows[i].findIndex(cell => cell && cell.toLowerCase().includes('silver'));
@@ -465,6 +471,10 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           stockVal = parseNum(row[stockIdx]);
         }
         const listVal = row[listIdx] !== undefined && row[listIdx] !== null ? row[listIdx].toString().trim() : '';
+        const rawImgField = imageUrlsIdx !== -1 && row[imageUrlsIdx] ? row[imageUrlsIdx].toString().trim() : '';
+        const rawImgMatch = rawImgField.match(/https?:\/\/[^\s,"'>|]+/);
+        const rawImg = rawImgMatch ? rawImgMatch[0] : (rawImgField ? rawImgField.split('|')[0].trim() : '');
+        const serviceImg = prodId ? `https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/${encodeURIComponent(prodId)}/image` : '';
 
         if (trimmed.length > 1 && !productMap.has(trimmed)) {
           productMap.set(trimmed, {
@@ -478,7 +488,9 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             },
             unlimitedStock: isUnlimited,
             stock: stockVal,
-            list: listVal
+            list: listVal,
+            imageUrl: serviceImg || rawImg,
+            rawImageUrl: rawImg
           });
         }
       }
@@ -514,14 +526,19 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             const priceA = p.priceA !== undefined && p.priceA !== '' ? parseNum(p.priceA) : (p.prices?.A !== undefined ? parseNum(p.prices.A) : (csvData?.prices?.A ?? numPrice));
             const priceB = p.priceB !== undefined && p.priceB !== '' ? parseNum(p.priceB) : (p.prices?.B !== undefined ? parseNum(p.prices.B) : (csvData?.prices?.B ?? numPrice));
             const priceC = p.priceC !== undefined && p.priceC !== '' ? parseNum(p.priceC) : (p.prices?.C !== undefined ? parseNum(p.prices.C) : (csvData?.prices?.C ?? numPrice));
+            const resolvedId = p.id !== undefined ? p.id : (csvData ? csvData.id : undefined);
+            const resolvedRawImg = p.rawImageUrl || (csvData ? csvData.rawImageUrl : undefined);
+            const resolvedImg = p.imageUrl || (csvData ? csvData.imageUrl : (resolvedId ? `https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/${encodeURIComponent(resolvedId)}/image` : undefined));
             return {
               ...p,
-              id: p.id !== undefined ? p.id : (csvData ? csvData.id : undefined),
+              id: resolvedId,
               price: numPrice,
               prices: { A: priceA, B: priceB, C: priceC },
               unlimitedStock: p.unlimitedStock !== undefined ? p.unlimitedStock : (csvData ? csvData.unlimitedStock : false),
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined),
-              list: p.list !== undefined && p.list !== null ? String(p.list).trim() : (csvData ? csvData.list : undefined)
+              list: p.list !== undefined && p.list !== null ? String(p.list).trim() : (csvData ? csvData.list : undefined),
+              imageUrl: resolvedImg,
+              rawImageUrl: resolvedRawImg
             };
           });
 
@@ -542,6 +559,40 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     }
   }
 
+  // 2b. Attempt to fetch extra image attributes from the Product List API
+  try {
+    const imgApiRes = await fetchWithTimeout(`${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products`, { method: 'GET' }, 2500);
+    if (imgApiRes.ok) {
+      const imgData = await imgApiRes.json();
+      const items = Array.isArray(imgData) ? imgData : (Array.isArray(imgData?.products) ? imgData.products : []);
+      if (items.length > 0) {
+        const imgMap = new Map<string, { id?: string; rawUrl?: string }>();
+        items.forEach((it: any) => {
+          const rawUrl = it.extraAttributes?.['Image URLs'] || it.imageUrls || it.imageUrl;
+          if (it.name) imgMap.set(it.name.trim(), { id: it.id, rawUrl });
+          if (it.id) imgMap.set(it.id.trim(), { id: it.id, rawUrl });
+        });
+
+        csvProducts = csvProducts.map(p => {
+          const match = imgMap.get(p.name) || (p.id ? imgMap.get(p.id) : undefined);
+          if (match) {
+            const rawUrl = match.rawUrl || p.rawImageUrl;
+            const prodId = match.id || p.id;
+            return {
+              ...p,
+              id: prodId,
+              rawImageUrl: rawUrl,
+              imageUrl: prodId ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${encodeURIComponent(prodId)}/image` : (rawUrl || p.imageUrl)
+            };
+          }
+          return p;
+        });
+      }
+    }
+  } catch (imgApiErr) {
+    // Graceful fallback to existing parsed CSV / GAS image data
+  }
+
   if (csvProducts.length > 0) {
     setCachedItem('products', csvProducts);
     return csvProducts;
@@ -558,6 +609,16 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
   }
 
   return DEFAULT_PRODUCTS;
+};
+
+export const PRODUCT_IMAGE_SERVICE_BASE_URL = 'https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app';
+
+export const getProductImageUrl = (product: { id?: string; imageUrl?: string; rawImageUrl?: string }): { primary: string; fallback: string } => {
+  const primary = product.id
+    ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${encodeURIComponent(product.id)}/image`
+    : (product.imageUrl || '');
+  const fallback = product.rawImageUrl || (product.imageUrl && product.imageUrl !== primary ? product.imageUrl : '');
+  return { primary, fallback };
 };
 
 export const addCustomerToSheet = async (name: string, user: string, district: string, grade: 'A' | 'B' | 'C'): Promise<boolean> => {

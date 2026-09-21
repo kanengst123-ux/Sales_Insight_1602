@@ -69,6 +69,8 @@ export interface Product {
   unlimitedStock?: boolean;
   stock?: number;
   list?: string | number;
+  imageUrl?: string;
+  rawImageUrl?: string;
 }
 
 export interface Customer {

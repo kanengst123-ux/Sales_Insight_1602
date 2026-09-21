@@ -4,6 +4,7 @@ import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loade
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts, addCustomerToSheet, addProductToSheet } from '../services/dataService';
 import { Product, OrderItem, Customer, SavedOrder } from '../types';
+import { ProductThumbnail } from './ProductThumbnail';
 
 interface OrderEntryProps {
   onBack: () => void;
@@ -862,11 +863,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <span className={`text-xs sm:text-sm font-bold mt-1 ${
-                                    isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
-                                  }`}>
-                                    {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (remaining < 10) ? `剩餘庫存: ${remaining} (庫存緊張)` : `剩餘庫存: ${remaining}`}
-                                  </span>
+                                  <div className="flex items-center gap-2.5 mt-1.5">
+                                    <ProductThumbnail product={p} size="sm" />
+                                    <span className={`text-xs sm:text-sm font-bold ${
+                                      isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
+                                    }`}>
+                                      {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (remaining < 10) ? `剩餘庫存: ${remaining} (庫存緊張)` : `剩餘庫存: ${remaining}`}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                               <div 
@@ -1101,11 +1105,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                      </button>
                                      <div className="flex flex-col min-w-0">
                                        <h5 className="text-base sm:text-lg md:text-xl font-black text-slate-900 leading-snug break-words">{item.name}</h5>
-                                       {!isUnlimited && (
-                                         <span className={`text-xs sm:text-sm font-bold mt-1 ${rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'}`}>
-                                           {rem <= 0 ? '已達庫存上限 (剩餘可用: 0)' : `剩餘可用庫存: ${rem}`}
-                                         </span>
-                                       )}
+                                       <div className="flex items-center gap-2.5 mt-1.5">
+                                         {prod && <ProductThumbnail product={prod} size="sm" />}
+                                         {!isUnlimited && (
+                                           <span className={`text-xs sm:text-sm font-bold ${rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'}`}>
+                                             {rem <= 0 ? '已達庫存上限 (剩餘可用: 0)' : `剩餘可用庫存: ${rem}`}
+                                           </span>
+                                         )}
+                                       </div>
                                      </div>
                                    </div>
                                    {item.unitsPerBox && (
@@ -1343,15 +1350,18 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                  </button>
                                  <div className="flex flex-col min-w-0 align-left text-left">
                                    <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-900">{p.name}</span>
-                                   {p.unlimitedStock ? (
-                                     <span className="text-xs sm:text-sm font-bold mt-0.5 text-slate-400">庫存: 無限制</span>
-                                   ) : (
-                                     <span className={`text-xs sm:text-sm font-bold mt-0.5 ${
-                                       isOutOfStock ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'
-                                     }`}>
-                                       {isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
-                                     </span>
-                                   )}
+                                   <div className="flex items-center gap-2.5 mt-1.5">
+                                     <ProductThumbnail product={p} size="sm" />
+                                     {p.unlimitedStock ? (
+                                       <span className="text-xs sm:text-sm font-bold text-slate-400">庫存: 無限制</span>
+                                     ) : (
+                                       <span className={`text-xs sm:text-sm font-bold ${
+                                         isOutOfStock ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'
+                                       }`}>
+                                         {isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
+                                       </span>
+                                     )}
+                                   </div>
                                  </div>
                                </div>
                                <button
