@@ -234,7 +234,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     const prod = products.find(p => p.name === productName);
     if (!prod || prod.unlimitedStock) return Infinity;
     const reservedByOthers = otherOrdersReservedMap.get(productName) || 0;
-    return Math.max(0, (prod.stock ?? 0) - reservedByOthers);
+    return (prod.stock ?? 0) - reservedByOthers;
   }, [products, otherOrdersReservedMap]);
 
   const totalOrderAmount = useMemo(() => {
@@ -249,14 +249,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       product.name.trim() === '上單收多$' ||
       product.name.trim() === '扣上單 $' ||
       product.name.trim() === '扣上單$';
-
-    const isUnlimited = !!product.unlimitedStock || isSpecialNegativeProduct;
-    const remaining = getRemainingStock(product);
-
-    if (!isUnlimited && remaining <= 0) {
-      alert(`「${product.name}」目前可用庫存為 0，不能再訂購！`);
-      return;
-    }
 
     const boxInfo = parseOuterBoxInfo(product.name);
     // Determine price based on selected customer's grade
@@ -278,29 +270,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
 
     const defaultStep = boxInfo ? boxInfo.units : 12;
-    // Strictly prevent ordering beyond available stock
-    const qtyToAdd = isSpecialNegativeProduct 
-      ? -1 
-      : (!isUnlimited ? Math.min(defaultStep, remaining) : defaultStep);
-
-    if (qtyToAdd <= 0 && !isSpecialNegativeProduct) {
-      alert(`「${product.name}」目前可用庫存為 0，不能再訂購！`);
-      return;
-    }
+    // Allow negative stock when making orders - do not restrict qtyToAdd
+    const qtyToAdd = isSpecialNegativeProduct ? -1 : defaultStep;
 
     setSelectedItems(prev => {
       const existingIndex = prev.findIndex(item => item.name === product.name);
       if (existingIndex !== -1 && !isSpecialNegativeProduct) {
         const item = prev[existingIndex];
         const step = item.isOuterBox ? (Number(item.unitsPerBox) || (boxInfo ? boxInfo.units : 12)) : 1;
-        const addAmount = !isUnlimited ? Math.min(step, remaining) : step;
-        if (addAmount <= 0) {
-          alert(`「${product.name}」已達到可用庫存上限 (${item.quantity} 件)！`);
-          return prev;
-        }
         return prev.map((it, idx) => {
           if (idx === existingIndex) {
-            return { ...it, quantity: (Number(it.quantity) || 0) + addAmount };
+            return { ...it, quantity: (Number(it.quantity) || 0) + step };
           }
           return it;
         });
@@ -312,7 +292,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       const newItem: OrderItem = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: product.name,
-        // Default to 1 outer (or remaining available stock if less)
         quantity: qtyToAdd,
         price: tieredPrice,
         isOuterBox: isBoxMode,
@@ -380,14 +359,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
             item.name.includes('扣上單 $') ||
             item.name.includes('扣上單$');
 
-          const prod = products.find(p => p.name === item.name);
-          if (prod && !prod.unlimitedStock && !isSpecialNegativeProduct) {
-            const maxAllowed = getMaxStockForOrder(item.name);
-            if (q > maxAllowed) {
-              alert(`「${item.name}」可用庫存僅剩 ${maxAllowed} 件，不能超過庫存！`);
-              q = maxAllowed;
-            }
-          }
           if (!isSpecialNegativeProduct && q < 0) {
             q = 0;
           }
@@ -420,21 +391,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const handleFinalSave = () => {
     if (!selectedCustomer || selectedItems.length === 0) return;
     
-    // Strict stock verification before saving
+    // Verify item quantities (allow negative stock, but quantity must be greater than 0)
     for (const item of selectedItems) {
       const isSpecial = item.name.includes('上單收多$') || item.name.includes('扣上單');
       if (isSpecial) continue;
-      const prod = products.find(p => p.name === item.name);
-      if (prod && !prod.unlimitedStock) {
-        const maxStock = getMaxStockForOrder(item.name);
-        if (item.quantity > maxStock) {
-          alert(`貨品「${item.name}」訂購數量 (${item.quantity}) 超過了可用庫存 (${maxStock})！請先調減數量後再完成此單。`);
-          return;
-        }
-        if (item.quantity <= 0) {
-          alert(`貨品「${item.name}」數量必須大於 0！`);
-          return;
-        }
+      if (item.quantity <= 0) {
+        alert(`貨品「${item.name}」數量必須大於 0！`);
+        return;
       }
     }
 
@@ -815,7 +778,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                         {filteredProducts.slice(0, 60).map((p, idx) => {
                           const remaining = getRemainingStock(p);
                           const isUnlimited = !!p.unlimitedStock;
-                          const isOutOfStock = !isUnlimited && remaining <= 0;
                           
                           const matchingItems = selectedItems.filter(item => item.name === p.name);
                           const isAdded = matchingItems.length > 0;
@@ -831,14 +793,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                             <div
                               key={idx}
                               onClick={() => {
-                                if (isOutOfStock) {
-                                  alert(`「${p.name}」目前可用庫存為 0，不能再訂購！`);
-                                  return;
-                                }
                                 handleAddProduct(p);
                               }}
-                              className={`w-full flex items-center justify-between p-3.5 transition-colors group text-left touch-manipulation ${
-                                isOutOfStock ? 'bg-slate-50/70 opacity-60 cursor-not-allowed' : isAdded ? 'bg-blue-50/50 hover:bg-blue-50 cursor-pointer' : 'hover:bg-slate-50 cursor-pointer'
+                              className={`w-full flex items-center justify-between p-3.5 transition-colors group text-left touch-manipulation cursor-pointer ${
+                                isAdded ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-slate-50'
                               }`}
                             >
                               <div className="flex items-center gap-2.5 flex-1 pr-2 min-w-0">
@@ -866,9 +824,17 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                   <div className="flex items-center gap-2.5 mt-1.5">
                                     <ProductThumbnail product={p} size="sm" />
                                     <span className={`text-xs sm:text-sm font-bold ${
-                                      isUnlimited ? 'text-slate-400' : isOutOfStock ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
+                                      isUnlimited ? 'text-slate-400' : (remaining < 0) ? 'text-rose-600' : (remaining === 0) ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
                                     }`}>
-                                      {isUnlimited ? '庫存: 無限制' : isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (remaining < 10) ? `剩餘庫存: ${remaining} (庫存緊張)` : `剩餘庫存: ${remaining}`}
+                                      {isUnlimited 
+                                        ? '庫存: 無限制' 
+                                        : (remaining < 0)
+                                        ? `剩餘庫存: ${remaining} (負庫存)`
+                                        : (remaining === 0) 
+                                        ? '剩餘庫存: 0' 
+                                        : (remaining < 10) 
+                                        ? `剩餘庫存: ${remaining} (庫存緊張)` 
+                                        : `剩餘庫存: ${remaining}`}
                                     </span>
                                   </div>
                                 </div>
@@ -892,16 +858,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={isOutOfStock}
                                   onClick={() => handleAddProduct(p)}
                                   className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                                    isOutOfStock 
-                                      ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed opacity-40' 
-                                      : isAdded 
-                                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 active:scale-90' 
-                                        : 'bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 shadow-sm active:scale-90'
+                                    isAdded 
+                                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 active:scale-90' 
+                                      : 'bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 shadow-sm active:scale-90'
                                   }`}
-                                  title={isOutOfStock ? "庫存不足，無法選取" : "增加選取"}
+                                  title="增加選取"
                                 >
                                   <Plus className="w-4 h-4 stroke-[3]" />
                                 </button>
@@ -1080,137 +1043,111 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                          </div>
                        ) : (
                          <div className="space-y-3.5">
-                           {selectedItems.map((item) => {
-                             const prod = products.find(p => p.name === item.name);
-                             const isUnlimited = !prod || !!prod.unlimitedStock;
-                             const rem = prod ? getRemainingStock(prod) : Infinity;
-                             const isStockExhausted = !isUnlimited && rem <= 0;
-                             const otherReserved = otherOrdersReservedMap.get(item.name) || 0;
-                             const maxStockForThisOrder = prod && !prod.unlimitedStock ? Math.max(0, (prod.stock ?? 0) - otherReserved) : Infinity;
+                          {selectedItems.map((item) => {
+                            const prod = products.find(p => p.name === item.name);
+                            const isUnlimited = !prod || !!prod.unlimitedStock;
+                            const rem = prod ? getRemainingStock(prod) : Infinity;
+                            const otherReserved = otherOrdersReservedMap.get(item.name) || 0;
+                            const maxStockForThisOrder = prod && !prod.unlimitedStock ? ((prod.stock ?? 0) - otherReserved) : Infinity;
 
-                             return (
-                               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all group">
-                                 <div className="flex items-center justify-between gap-2 mb-3">
-                                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                                     <button
-                                       type="button"
-                                       onClick={() => {
-                                         if (prod) toggleFavorite(prod);
-                                       }}
-                                       className={`p-1 rounded-md transition-colors flex-shrink-0 ${
-                                         isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
-                                       }`}
-                                     >
-                                       <Star className={`w-5 h-5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
-                                     </button>
-                                     <div className="flex flex-col min-w-0">
-                                       <h5 className="text-base sm:text-lg md:text-xl font-black text-slate-900 leading-snug break-words">{item.name}</h5>
-                                       <div className="flex items-center gap-2.5 mt-1.5">
-                                         {prod && <ProductThumbnail product={prod} size="sm" />}
-                                         {!isUnlimited && (
-                                           <span className={`text-xs sm:text-sm font-bold ${rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'}`}>
-                                             {rem <= 0 ? '已達庫存上限 (剩餘可用: 0)' : `剩餘可用庫存: ${rem}`}
-                                           </span>
-                                         )}
-                                       </div>
-                                     </div>
-                                   </div>
-                                   {item.unitsPerBox && (
-                                     <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
-                                       <button
-                                         type="button"
-                                         onClick={() => {
-                                           const targetQty = Math.min(1, maxStockForThisOrder);
-                                           handleUpdateItem(item.id, { isOuterBox: false, quantity: targetQty });
-                                         }}
-                                         className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
-                                           !item.isOuterBox 
-                                             ? 'bg-white text-blue-600 shadow-sm' 
-                                             : 'text-slate-500 hover:text-slate-700'
-                                         }`}
-                                       >
-                                         單位
-                                       </button>
-                                       <button
-                                         type="button"
-                                         onClick={() => {
-                                           const boxQty = item.unitsPerBox || 12;
-                                           const targetQty = Math.min(boxQty, maxStockForThisOrder);
-                                           if (maxStockForThisOrder < boxQty && !isUnlimited) {
-                                             alert(`「${item.name}」可用庫存僅剩 ${maxStockForThisOrder} 件，已調整為 ${targetQty} 件。`);
-                                           }
-                                           handleUpdateItem(item.id, { isOuterBox: true, quantity: targetQty });
-                                         }}
-                                         className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
-                                           item.isOuterBox 
-                                             ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
-                                             : 'text-slate-500 hover:text-slate-700'
-                                         }`}
-                                       >
-                                         {item.outerBoxUnit || '箱'}
-                                       </button>
-                                     </div>
-                                   )}
-                                 </div>
+                            return (
+                              <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all group">
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (prod) toggleFavorite(prod);
+                                      }}
+                                      className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                                        isFavorite(item.name) ? 'text-yellow-400' : 'text-slate-300 hover:text-yellow-300'
+                                      }`}
+                                    >
+                                      <Star className={`w-5 h-5 ${isFavorite(item.name) ? 'fill-current' : ''}`} />
+                                    </button>
+                                    <div className="flex flex-col min-w-0">
+                                      <h5 className="text-base sm:text-lg md:text-xl font-black text-slate-900 leading-snug break-words">{item.name}</h5>
+                                      <div className="flex items-center gap-2.5 mt-1.5">
+                                        {prod && <ProductThumbnail product={prod} size="sm" />}
+                                        {!isUnlimited && (
+                                          <span className={`text-xs sm:text-sm font-bold ${rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'}`}>
+                                            {rem < 0 ? `剩餘可用庫存: ${rem} (負庫存)` : rem === 0 ? '剩餘可用庫存: 0' : `剩餘可用庫存: ${rem}`}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {item.unitsPerBox && (
+                                    <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
+                                          !item.isOuterBox 
+                                            ? 'bg-white text-blue-600 shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        單位
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const boxQty = item.unitsPerBox || 12;
+                                          handleUpdateItem(item.id, { isOuterBox: true, quantity: boxQty });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
+                                          item.isOuterBox 
+                                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        {item.outerBoxUnit || '箱'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
 
-                                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                                   {/* Quantity Stepper */}
-                                   <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-32 flex-shrink-0">
-                                     <button 
-                                       type="button"
-                                       onClick={() => {
-                                         const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
-                                         const curQty = Number(item.quantity) || 0;
-                                         handleUpdateItem(item.id, { quantity: curQty - step });
-                                       }}
-                                       className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
-                                       title="減少數量"
-                                     >
-                                       <Minus className="w-4 h-4 stroke-[3]" />
-                                     </button>
-                                     <input
-                                       type="number"
-                                       value={item.quantity}
-                                       min="0"
-                                       max={!isUnlimited ? maxStockForThisOrder : undefined}
-                                       onChange={(e) => {
-                                         let val = parseFloat(e.target.value) || 0;
-                                         if (!isUnlimited && val > maxStockForThisOrder) {
-                                           alert(`「${item.name}」最多只可訂購 ${maxStockForThisOrder} 件 (可用庫存不足)！`);
-                                           val = maxStockForThisOrder;
-                                         }
-                                         handleUpdateItem(item.id, { quantity: val });
-                                       }}
-                                       className="w-full text-center bg-transparent text-lg sm:text-xl font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
-                                     />
-                                     <button 
-                                       type="button"
-                                       disabled={isStockExhausted}
-                                       onClick={() => {
-                                         const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
-                                         const curQty = Number(item.quantity) || 0;
-                                         if (!isUnlimited) {
-                                           if (rem <= 0) {
-                                             alert(`「${item.name}」已達到可用庫存上限！`);
-                                             return;
-                                           }
-                                           const addAmount = Math.min(step, rem);
-                                           handleUpdateItem(item.id, { quantity: curQty + addAmount });
-                                         } else {
-                                           handleUpdateItem(item.id, { quantity: curQty + step });
-                                         }
-                                       }}
-                                       className={`p-2.5 transition-colors ${
-                                         isStockExhausted 
-                                           ? 'text-slate-200 cursor-not-allowed' 
-                                           : 'text-slate-600 hover:text-blue-600 hover:bg-slate-100'
-                                       }`}
-                                       title={isStockExhausted ? "庫存不足，無法再增加" : "增加數量"}
-                                     >
-                                       <Plus className="w-4 h-4 stroke-[3]" />
-                                     </button>
-                                   </div>
-
+                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                  {/* Quantity Stepper */}
+                                  <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-32 flex-shrink-0">
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
+                                        const curQty = Number(item.quantity) || 0;
+                                        handleUpdateItem(item.id, { quantity: curQty - step });
+                                      }}
+                                      className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                      title="減少數量"
+                                    >
+                                      <Minus className="w-4 h-4 stroke-[3]" />
+                                    </button>
+                                    <input
+                                      type="number"
+                                      value={item.quantity}
+                                      min="0"
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        handleUpdateItem(item.id, { quantity: val });
+                                      }}
+                                      className="w-full text-center bg-transparent text-lg sm:text-xl font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                    />
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        const step = (item.isOuterBox && item.outerBoxUnit !== "打") ? (Number(item.unitsPerBox) || 1) : 1;
+                                        const curQty = Number(item.quantity) || 0;
+                                        handleUpdateItem(item.id, { quantity: curQty + step });
+                                      }}
+                                      className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                      title="增加數量"
+                                    >
+                                      <Plus className="w-4 h-4 stroke-[3]" />
+                                    </button>
+                                  </div>
                                    {/* Price Adjustment */}
                                    <div className="flex items-center justify-center flex-shrink-0">
                                      <div className="flex items-center gap-1">
@@ -1332,61 +1269,51 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                        </div>
                     ) : (
                        <div className="grid grid-cols-1 gap-3">
-                         {favorites.map((p, idx) => {
-                           const rem = getRemainingStock(p);
-                           const isOutOfStock = !p.unlimitedStock && rem <= 0;
-                           return (
-                             <div
-                               key={idx}
-                               className="w-full flex items-center justify-between p-3.5 sm:p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500/30 transition-all group"
-                             >
-                               <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
-                                 <button
-                                   type="button"
-                                   onClick={() => toggleFavorite(p)}
-                                   className="p-1.5 rounded-md text-yellow-400 transition-colors"
-                                 >
-                                   <Star className="w-5 h-5 fill-current" />
-                                 </button>
-                                 <div className="flex flex-col min-w-0 align-left text-left">
-                                   <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-900">{p.name}</span>
-                                   <div className="flex items-center gap-2.5 mt-1.5">
-                                     <ProductThumbnail product={p} size="sm" />
-                                     {p.unlimitedStock ? (
-                                       <span className="text-xs sm:text-sm font-bold text-slate-400">庫存: 無限制</span>
-                                     ) : (
-                                       <span className={`text-xs sm:text-sm font-bold ${
-                                         isOutOfStock ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'
-                                       }`}>
-                                         {isOutOfStock ? '剩餘庫存: 0 (庫存不足，無法落單)' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
-                                       </span>
-                                     )}
-                                   </div>
-                                 </div>
-                               </div>
-                               <button
-                                 type="button"
-                                 disabled={isOutOfStock}
-                                 onClick={() => {
-                                   if (isOutOfStock) {
-                                     alert(`「${p.name}」目前可用庫存為 0，無法落單！`);
-                                     return;
-                                   }
-                                   handleAddProduct(p);
-                                   setActiveTab('order');
-                                 }}
-                                 className={`p-2.5 rounded-xl active:scale-95 transition-all flex-shrink-0 text-white ${
-                                   isOutOfStock 
-                                     ? 'bg-slate-300 cursor-not-allowed shadow-none' 
-                                     : 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20'
-                                 }`}
-                                 title={isOutOfStock ? "庫存不足，無法選取" : "加入訂單"}
-                               >
-                                 <Plus className="w-5 h-5 stroke-[3]" />
-                               </button>
-                             </div>
-                           );
-                         })}
+                        {favorites.map((p, idx) => {
+                          const rem = getRemainingStock(p);
+                          return (
+                            <div
+                              key={idx}
+                              className="w-full flex items-center justify-between p-3.5 sm:p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500/30 transition-all group"
+                            >
+                              <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFavorite(p)}
+                                  className="p-1.5 rounded-md text-yellow-400 transition-colors"
+                                >
+                                  <Star className="w-5 h-5 fill-current" />
+                                </button>
+                                <div className="flex flex-col min-w-0 align-left text-left">
+                                  <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-900">{p.name}</span>
+                                  <div className="flex items-center gap-2.5 mt-1.5">
+                                    <ProductThumbnail product={p} size="sm" />
+                                    {p.unlimitedStock ? (
+                                      <span className="text-xs sm:text-sm font-bold text-slate-400">庫存: 無限制</span>
+                                    ) : (
+                                      <span className={`text-xs sm:text-sm font-bold ${
+                                        rem < 0 ? 'text-rose-600' : rem === 0 ? 'text-rose-600' : rem < 10 ? 'text-amber-600' : 'text-slate-500'
+                                      }`}>
+                                        {rem < 0 ? `剩餘庫存: ${rem} (負庫存)` : rem === 0 ? '剩餘庫存: 0' : (rem < 10) ? `剩餘庫存: ${rem} (庫存緊張)` : `剩餘庫存: ${rem}`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleAddProduct(p);
+                                  setActiveTab('order');
+                                }}
+                                className="p-2.5 rounded-xl active:scale-95 transition-all flex-shrink-0 text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20"
+                                title="加入訂單"
+                              >
+                                <Plus className="w-5 h-5 stroke-[3]" />
+                              </button>
+                            </div>
+                          );
+                        })}
                        </div>
                     )}
                   </div>

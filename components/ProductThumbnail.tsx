@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { Product } from '../types';
-import { PRODUCT_IMAGE_SERVICE_BASE_URL } from '../services/dataService';
+import {
+  formatProductId,
+  PRODUCT_IMAGE_DEV_BASE_URL,
+  PRODUCT_IMAGE_PRE_BASE_URL,
+  PRODUCT_IMAGE_SERVICE_BASE_URL,
+} from '../services/dataService';
 import { ImageIcon, X } from 'lucide-react';
 
 interface ProductThumbnailProps {
@@ -20,21 +25,44 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
   const [hasError, setHasError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
 
-  // The filename of the pic is strictly the Product ID from Col B of the 'raw' sheet
-  const prodId = (product.id || '').trim();
+  const rawId = (product.id || '').trim();
+  const formattedId = formatProductId(rawId);
+  const directUrl = (product.rawImageUrl || (product.imageUrl && !product.imageUrl.includes('/api/products/') && !product.imageUrl.includes('/api/product-image') ? product.imageUrl : '')).trim();
 
-  // List of candidate image URLs based strictly on Product ID
+  // Reset error and attempt state whenever product or image properties change
+  React.useEffect(() => {
+    setAttemptIndex(0);
+    setHasError(false);
+  }, [product.id, product.imageUrl, product.rawImageUrl]);
+
+  // List of candidate image URLs in priority order:
+  // 1. Primary Dev Authority Endpoint: https://ais-dev-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/{productId}/image
+  // 2. Shared URL Fallback: https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app/api/products/{productId}/image
+  // 3. Local proxy endpoint: /api/products/{productId}/image
+  // 4. Direct / Sheet15 image URL (with proxy fallback)
   const candidateUrls = React.useMemo(() => {
-    if (!prodId) return [];
     const urls: string[] = [];
-    // 1. Local backend proxy that checks local files and remote service
-    urls.push(`/api/product-image/${encodeURIComponent(prodId)}`);
-    // 2. Direct service endpoint if accessible
-    if (PRODUCT_IMAGE_SERVICE_BASE_URL) {
-      urls.push(`${PRODUCT_IMAGE_SERVICE_BASE_URL.replace(/\/$/, '')}/api/products/${encodeURIComponent(prodId)}/image`);
+
+    if (formattedId) {
+      urls.push(`${PRODUCT_IMAGE_DEV_BASE_URL}/api/products/${encodeURIComponent(formattedId)}/image`);
+      if (rawId && rawId !== formattedId) {
+        urls.push(`${PRODUCT_IMAGE_DEV_BASE_URL}/api/products/${encodeURIComponent(rawId)}/image`);
+      }
+      urls.push(`${PRODUCT_IMAGE_PRE_BASE_URL}/api/products/${encodeURIComponent(formattedId)}/image`);
+      urls.push(`/api/products/${encodeURIComponent(formattedId)}/image`);
     }
+
+    if (directUrl && directUrl.startsWith('http')) {
+      urls.push(directUrl);
+      urls.push(`/api/proxy-image?url=${encodeURIComponent(directUrl)}`);
+    }
+
+    if (formattedId) {
+      urls.push(`/api/product-image/${encodeURIComponent(formattedId)}`);
+    }
+
     return urls;
-  }, [prodId]);
+  }, [formattedId, rawId, directUrl]);
 
   const currentSrc = !hasError && candidateUrls.length > 0 && attemptIndex < candidateUrls.length
     ? candidateUrls[attemptIndex]
@@ -47,11 +75,11 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
     lg: 'w-20 h-20 min-w-[80px] min-h-[80px]',
   }[size];
 
-  if (!prodId || !currentSrc || hasError) {
+  if (!currentSrc || hasError) {
     return (
       <div
         className={`${sizeClasses} rounded-lg bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-300 flex-shrink-0 ${className}`}
-        title={prodId ? `暫無圖片 (貨品 ID: ${prodId})` : "暫無圖片"}
+        title={formattedId ? `暫無圖片 (貨品 ID: ${formattedId})` : "暫無圖片"}
       >
         <ImageIcon className="w-5 h-5 opacity-60" />
       </div>
@@ -70,7 +98,7 @@ export const ProductThumbnail: React.FC<ProductThumbnailProps> = ({
         className={`relative ${sizeClasses} rounded-lg bg-white border border-slate-200/90 p-0.5 shadow-xs overflow-hidden flex-shrink-0 flex items-center justify-center group/thumb ${
           allowZoom ? 'cursor-zoom-in hover:border-blue-400' : ''
         } ${className}`}
-        title={allowZoom ? `點擊放大查看貨品圖片 (ID: ${prodId})` : product.name}
+        title={allowZoom ? `點擊放大查看貨品圖片 (ID: ${formattedId})` : product.name}
       >
         <img
           src={currentSrc}

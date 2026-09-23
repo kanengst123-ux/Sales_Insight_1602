@@ -235,24 +235,223 @@ async function startServer() {
     }
   };
 
+  // In-memory image buffer cache for ultra-fast serving
+  const imageCache = new Map<string, { buffer: Buffer; contentType: string }>();
+  const MAX_IMAGE_CACHE = 500;
+
+  function detectImageContentType(buffer: Buffer, headerType?: string | null): string {
+    if (buffer.length >= 12) {
+      if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+          buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+        return "image/webp";
+      }
+      if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return "image/jpeg";
+      }
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+        return "image/png";
+      }
+      if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
+        return "image/gif";
+      }
+    }
+    if (headerType && headerType.startsWith("image/")) {
+      return headerType;
+    }
+    return "image/jpeg";
+  }
+
+  function formatProductId(id: string | number | undefined | null): string {
+    if (id === undefined || id === null) return "";
+    const str = String(id).trim();
+    if (!str) return "";
+    const numOnly = str.replace(/^id-/, "").trim();
+    return numOnly ? `id-${numOnly}` : str;
+  }
+
+  // Cache sheet product image mapping (Sheet15: Col A Product ID -> Col D Image URLs)
+  let sheetProductImageMap: Map<string, string> | null = null;
+  let lastSheetProductImageFetch = 0;
+
+  async function getProductImageUrlFromSheet(productId: string): Promise<string | null> {
+    const formattedId = formatProductId(productId);
+    const numId = productId.replace(/^id-/, "").trim();
+    const now = Date.now();
+    if (!sheetProductImageMap || now - lastSheetProductImageFetch > 10 * 60 * 1000) {
+      try {
+        const SHEET15_PUB_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1813720414&single=true&output=csv";
+        const SHEET15_GVIZ_URL = `https://docs.google.com/spreadsheets/d/${PRODUCT_LIST_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet15`;
+
+        let csvText = "";
+        try {
+          const res = await fetch(SHEET15_PUB_URL, { signal: AbortSignal.timeout(5000) });
+          if (res.ok) csvText = await res.text();
+        } catch {
+          // Fallback to GVIZ
+        }
+
+        if (!csvText) {
+          try {
+            const res = await fetch(SHEET15_GVIZ_URL, { signal: AbortSignal.timeout(5000) });
+            if (res.ok) csvText = await res.text();
+          } catch (err) {
+            console.warn("Failed to fetch Sheet15 via GVIZ:", err);
+          }
+        }
+
+        if (csvText) {
+          const rows = parseCSV(csvText);
+          const map = new Map<string, string>();
+          let pIdIdx = 0; // Col A
+          let imgIdx = 3; // Col D
+          if (rows.length > 0) {
+            const headers = rows[0].map(h => h.trim().toLowerCase());
+            const foundId = headers.findIndex(h => h.replace(/[\s_-]/g, "") === "productid" || h === "id");
+            if (foundId !== -1) pIdIdx = foundId;
+            const foundImg = headers.findIndex(h => h === "image urls" || h === "image url" || h === "image");
+            if (foundImg !== -1) imgIdx = foundImg;
+          }
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            const rawId = (row[pIdIdx] || "").trim();
+            const rawImg = (row[imgIdx] || "").trim();
+            const match = rawImg.match(/https?:\/\/[^\s,"'>|]+/);
+            if (rawId && match) {
+              const fId = formatProductId(rawId);
+              const nId = rawId.replace(/^id-/, "").trim();
+              map.set(fId, match[0]);
+              map.set(nId, match[0]);
+              map.set(rawId, match[0]);
+            }
+          }
+          sheetProductImageMap = map;
+          lastSheetProductImageFetch = now;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch Sheet15 for images:", e);
+      }
+    }
+    return (
+      sheetProductImageMap?.get(formattedId) ||
+      sheetProductImageMap?.get(numId) ||
+      sheetProductImageMap?.get(productId) ||
+      null
+    );
+  }
+
+  // Authority products list helper (builds canonical list strictly by product ID)
+  async function getAuthorityProductsList(): Promise<{ id: string; name: string; extraAttributes: { "Image URLs": string } }[]> {
+    await getProductImageUrlFromSheet("warmup");
+    const MASTER_PUB_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=687938954&single=true&output=csv";
+    const res = await fetch(MASTER_PUB_URL, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) throw new Error("Failed to fetch master sheet: " + res.statusText);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) return [];
+
+    let pIdIdx = 1; // Col B
+    let titleIdx = 2; // Col C
+    let imgIdx = 38; // Col AM
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const foundPid = headers.findIndex(h => h.replace(/[\s_-]/g, "") === "productid" || h === "id");
+    if (foundPid !== -1) pIdIdx = foundPid;
+    const foundTitle = headers.findIndex(h => h === "title" || h === "item" || h === "product name");
+    if (foundTitle !== -1) titleIdx = foundTitle;
+    const foundImg = headers.findIndex(h => h === "image urls" || h === "image url" || h === "image");
+    if (foundImg !== -1) imgIdx = foundImg;
+
+    const list: { id: string; name: string; extraAttributes: { "Image URLs": string } }[] = [];
+    const seenIds = new Set<string>();
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const rawId = (row[pIdIdx] || "").trim();
+      const name = (row[titleIdx] || "").trim();
+      if (!name || name.toLowerCase() === "title") continue;
+      const fId = formatProductId(rawId);
+      if (!fId || seenIds.has(fId)) continue;
+      seenIds.add(fId);
+
+      // Strict ID match for image
+      let img = sheetProductImageMap?.get(fId) || sheetProductImageMap?.get(rawId) || "";
+      if (!img && row[imgIdx]) {
+        const m = (row[imgIdx] || "").match(/https?:\/\/[^\s,"'>|]+/);
+        if (m) img = m[0];
+      }
+
+      list.push({
+        id: fId,
+        name,
+        extraAttributes: {
+          "Image URLs": img
+        }
+      });
+    }
+
+    return list;
+  }
+
   // API Routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
-  // Product image proxy endpoint - strictly matches Product ID (Col B from 'raw' sheet)
-  app.get("/api/product-image/:id", async (req, res) => {
-    const id = (req.params.id || "").trim();
-    if (!id) {
-      res.status(400).json({ error: "Missing product id" });
+  // Authority products list endpoint
+  app.get("/api/products", async (req, res) => {
+    // 1. Try remote authority endpoints first
+    const remoteBases = [
+      "https://ais-dev-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app",
+      "https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app"
+    ];
+
+    for (const base of remoteBases) {
+      try {
+        const remoteResp = await fetch(`${base}/api/products`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (remoteResp.ok) {
+          const data = await remoteResp.json();
+          if (data && Array.isArray(data.products) && data.products.length > 0) {
+            res.json(data);
+            return;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Build local authoritative products list with strict Unique ID matching
+    try {
+      const products = await getAuthorityProductsList();
+      res.json({ products });
+    } catch (err) {
+      console.error("Failed to build products list:", err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Exact Product Image Endpoint - matches formatted product ID strictly: /api/products/:id/image
+  app.get("/api/products/:id/image", async (req, res) => {
+    const rawId = (req.params.id || "").trim();
+    const formattedId = formatProductId(rawId);
+    if (!formattedId || formattedId === "id-") {
+      res.status(400).json({ error: "Missing or invalid product id" });
       return;
     }
 
-    // 1. Check local images directory in data/images
+    // 1. Check in-memory image cache
+    if (imageCache.has(formattedId)) {
+      const cached = imageCache.get(formattedId)!;
+      res.setHeader("Content-Type", cached.contentType);
+      res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+      res.send(cached.buffer);
+      return;
+    }
+
+    // 2. Check local images directory in data/images
     const localImgDir = path.join(process.cwd(), "data", "images");
     const extensions = ["", ".jpg", ".png", ".jpeg", ".webp"];
     for (const ext of extensions) {
-      const candidate = path.join(localImgDir, `${id}${ext}`);
+      const candidate = path.join(localImgDir, `${formattedId}${ext}`);
       if (fs.existsSync(candidate)) {
         try {
           const stat = fs.statSync(candidate);
@@ -265,31 +464,123 @@ async function startServer() {
       }
     }
 
-    // 2. Fetch from product image service if configured or accessible
-    const serviceBase = (process.env.PRODUCT_IMAGE_BASE_URL || "https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app").replace(/\/$/, "");
-    const remoteUrl = `${serviceBase}/api/products/${encodeURIComponent(id)}/image`;
+    // 3. Try remote authority endpoints
+    const remoteBases = [
+      "https://ais-dev-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app",
+      "https://ais-pre-e67qvrm3vxclidkmxocymu-259187692597.us-east1.run.app"
+    ];
 
+    for (const base of remoteBases) {
+      try {
+        const remoteUrl = `${base}/api/products/${encodeURIComponent(formattedId)}/image`;
+        const remoteResp = await fetch(remoteUrl, {
+          signal: AbortSignal.timeout(3500),
+          headers: { Accept: "image/*,*/*;q=0.8" },
+          redirect: "follow",
+        });
+        if (remoteResp.ok) {
+          const cType = remoteResp.headers.get("content-type") || "";
+          if (cType.startsWith("image/")) {
+            const buffer = Buffer.from(await remoteResp.arrayBuffer());
+            const contentType = detectImageContentType(buffer, cType);
+            if (imageCache.size >= MAX_IMAGE_CACHE) {
+              const firstKey = imageCache.keys().next().value;
+              if (firstKey) imageCache.delete(firstKey);
+            }
+            imageCache.set(formattedId, { buffer, contentType });
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+            res.send(buffer);
+            return;
+          }
+        }
+      } catch {}
+    }
+
+    // 4. Exact ID lookup from Google Sheet (Col A in Sheet15 strictly matches product ID)
     try {
-      const remoteRes = await fetch(remoteUrl, {
-        signal: AbortSignal.timeout(3500),
-      });
-
-      if (remoteRes.ok) {
-        const contentType = remoteRes.headers.get("content-type") || "image/jpeg";
-        if (contentType.startsWith("image/")) {
-          const buffer = await remoteRes.arrayBuffer();
+      const sheetUrl = await getProductImageUrlFromSheet(formattedId);
+      if (sheetUrl) {
+        const resp = await fetch(sheetUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (resp.ok) {
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          const contentType = detectImageContentType(buffer, resp.headers.get("content-type"));
+          if (imageCache.size >= MAX_IMAGE_CACHE) {
+            const firstKey = imageCache.keys().next().value;
+            if (firstKey) imageCache.delete(firstKey);
+          }
+          imageCache.set(formattedId, { buffer, contentType });
           res.setHeader("Content-Type", contentType);
-          res.setHeader("Cache-Control", "public, max-age=86400");
-          res.send(Buffer.from(buffer));
+          res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+          res.send(buffer);
           return;
         }
       }
-    } catch {
-      // Remote fetch failed or timed out
+    } catch (err) {
+      console.warn(`Error resolving image for ${formattedId}:`, err);
     }
 
-    // 3. Not found - send 404 so client displays placeholder instead of mismatched picture
-    res.status(404).json({ error: `Image not found for product ID ${id}` });
+    // 5. Not found - 404
+    res.status(404).json({ error: `Image not found for product ID ${formattedId}` });
+  });
+
+  // Alias /api/product-image/:id to the same exact handler
+  app.get("/api/product-image/:id", (req, res) => {
+    const formattedId = formatProductId(req.params.id);
+    res.redirect(`/api/products/${encodeURIComponent(formattedId)}/image`);
+  });
+
+  // General proxy endpoint to safely fetch and serve images bypassing iframe CORS & mime issues
+  app.get("/api/proxy-image", async (req, res) => {
+    const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    if (!rawUrl || !rawUrl.startsWith("http")) {
+      res.status(400).json({ error: "Invalid image URL" });
+      return;
+    }
+
+    if (imageCache.has(rawUrl)) {
+      const cached = imageCache.get(rawUrl)!;
+      res.setHeader("Content-Type", cached.contentType);
+      res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+      res.send(cached.buffer);
+      return;
+    }
+
+    try {
+      const resp = await fetch(rawUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!resp.ok) {
+        res.status(resp.status).json({ error: "Failed to fetch image" });
+        return;
+      }
+
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      const contentType = detectImageContentType(buffer, resp.headers.get("content-type"));
+
+      if (imageCache.size >= MAX_IMAGE_CACHE) {
+        const firstKey = imageCache.keys().next().value;
+        if (firstKey) imageCache.delete(firstKey);
+      }
+      imageCache.set(rawUrl, { buffer, contentType });
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+      res.send(buffer);
+    } catch (err) {
+      res.status(500).json({ error: "Image fetch error: " + String(err) });
+    }
   });
 
   // Get orders directly from Trade_log and Trade_log_admin tabs of Product_list
