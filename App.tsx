@@ -132,16 +132,35 @@ const App: React.FC = () => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
   }, [savedOrders]);
 
+  const activeSavedOrderIdsRef = useRef<Set<string>>(new Set());
+  const deletingOrderIdsRef = useRef<Set<string>>(new Set());
+
   const handleSaveOrder = async (order: SavedOrder) => {
+    // 1. Mark this order as actively created/saved so sync will never discard it
+    activeSavedOrderIdsRef.current.add(order.id);
+
+    // 2. Remove order.id from deletedOrderIds state and localStorage if present
+    setDeletedOrderIds(prev => {
+      const next = new Set(prev);
+      next.delete(order.id);
+      localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(next)));
+      return next;
+    });
+
+    // 3. Immediately persist into savedOrders and localStorage
     setSavedOrders(prev => {
       const idx = prev.findIndex(o => o.id === order.id);
+      let next: SavedOrder[];
       if (idx !== -1) {
-        const next = [...prev];
+        next = [...prev];
         next[idx] = order;
-        return next;
+      } else {
+        next = [order, ...prev];
       }
-      return [order, ...prev];
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
     });
+
     setEditingOrder(null);
     setActiveTab('saved_orders');
 
@@ -156,8 +175,6 @@ const App: React.FC = () => {
     setEditingOrder(order);
     setActiveTab('order');
   };
-
-  const deletingOrderIdsRef = useRef<Set<string>>(new Set());
 
   const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
     const match = productName.match(/(\d+)\/([^\s\d/]+)/);
@@ -204,6 +221,7 @@ const App: React.FC = () => {
   const handleDeleteOrder = async (orderId: string) => {
     if (deletingOrderIdsRef.current.has(orderId)) return;
     deletingOrderIdsRef.current.add(orderId);
+    activeSavedOrderIdsRef.current.delete(orderId);
 
     // 1. Immediately record in deletedOrderIds state and localStorage
     const nextDeletedSet = new Set(deletedOrderIds).add(orderId);
@@ -289,8 +307,17 @@ const App: React.FC = () => {
       }
     };
 
-    // Scan saved orders (which includes Trade_log, Trade_log_admin, server, and local)
+    // Scan saved orders, deleted orders, and past sales records so an ID is NEVER reused or collides:
     savedOrders.forEach(o => parseIdNumericPart(o.id));
+    deletedOrderIds.forEach(id => parseIdNumericPart(id));
+    records.forEach(r => parseIdNumericPart(r.orderId));
+    try {
+      const storedDel = localStorage.getItem('ws_deleted_order_ids');
+      if (storedDel) {
+        const parsed = JSON.parse(storedDel);
+        if (Array.isArray(parsed)) parsed.forEach((id: string) => parseIdNumericPart(id));
+      }
+    } catch {}
 
     const nextNum = maxNum + 1;
     // Format: name of user & standard 5-digit padded number starting with 00001
@@ -429,6 +456,7 @@ const App: React.FC = () => {
         }
       } catch {}
       serverDeletedIds.forEach(id => activeDeletedSet.add(id));
+      activeSavedOrderIdsRef.current.forEach(id => activeDeletedSet.delete(id));
       localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(activeDeletedSet)));
       setDeletedOrderIds(activeDeletedSet);
       purgeDeletedOrdersFromCache(Array.from(activeDeletedSet));
@@ -482,6 +510,7 @@ const App: React.FC = () => {
         }
       } catch {}
       serverDeletedIds.forEach(id => activeDeletedSet.add(id));
+      activeSavedOrderIdsRef.current.forEach(id => activeDeletedSet.delete(id));
       localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(activeDeletedSet)));
       setDeletedOrderIds(activeDeletedSet);
       purgeDeletedOrdersFromCache(Array.from(activeDeletedSet));

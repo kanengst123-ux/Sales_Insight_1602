@@ -87,10 +87,11 @@ const OrderList: React.FC<OrderListProps> = ({
 
   // Base role-filtered orders
   const roleFilteredOrders = useMemo(() => {
-    if (currentRole === 'Admin' || !currentRole || showAll) {
+    if (!currentRole || currentRole.trim().toUpperCase() === 'ADMIN' || showAll) {
       return orders;
     }
-    return orders.filter(o => o.salesName === currentRole);
+    const targetRole = currentRole.trim().toUpperCase();
+    return orders.filter(o => (o.salesName || '').trim().toUpperCase() === targetRole);
   }, [orders, currentRole, showAll]);
 
   // Counts for tabs
@@ -110,7 +111,7 @@ const OrderList: React.FC<OrderListProps> = ({
   const filteredOrders = useMemo(() => {
     return roleFilteredOrders.filter(order => {
       // User filter
-      if (selectedUser !== 'ALL' && order.salesName !== selectedUser) {
+      if (selectedUser !== 'ALL' && (order.salesName || '').trim().toUpperCase() !== selectedUser.trim().toUpperCase()) {
         return false;
       }
 
@@ -144,7 +145,7 @@ const OrderList: React.FC<OrderListProps> = ({
   }, [filteredOrders, currentPage]);
 
   const keyInCount = orders.filter(
-    o => (currentRole === 'Admin' || o.salesName === currentRole) && !o.isHeld && !o.isKeyedIn
+    o => (!currentRole || currentRole.trim().toUpperCase() === 'ADMIN' || (o.salesName || '').trim().toUpperCase() === currentRole.trim().toUpperCase()) && !o.isHeld && !o.isKeyedIn
   ).length;
 
   const formatDate = (dateStr: string) => {
