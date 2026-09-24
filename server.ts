@@ -15,6 +15,47 @@ async function startServer() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   const ORDERS_FILE = path.join(DATA_DIR, "saved_orders.json");
+  const DELETED_ORDERS_FILE = path.join(DATA_DIR, "deleted_order_ids.json");
+
+  const getDeletedOrderIds = (): string[] => {
+    try {
+      if (fs.existsSync(DELETED_ORDERS_FILE)) {
+        const raw = fs.readFileSync(DELETED_ORDERS_FILE, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) return list;
+      }
+    } catch (err) {
+      console.error("Error reading deleted orders file:", err);
+    }
+    return [];
+  };
+
+  const addDeletedOrderId = (orderId: string) => {
+    if (!orderId) return;
+    try {
+      const list = getDeletedOrderIds();
+      if (!list.includes(orderId)) {
+        list.push(orderId);
+        const trimmed = list.slice(-2000);
+        fs.writeFileSync(DELETED_ORDERS_FILE, JSON.stringify(trimmed, null, 2), "utf-8");
+      }
+    } catch (err) {
+      console.error("Error saving deleted order ID:", err);
+    }
+  };
+
+  const removeDeletedOrderId = (orderId: string) => {
+    if (!orderId) return;
+    try {
+      let list = getDeletedOrderIds();
+      if (list.includes(orderId)) {
+        list = list.filter(id => id !== orderId);
+        fs.writeFileSync(DELETED_ORDERS_FILE, JSON.stringify(list, null, 2), "utf-8");
+      }
+    } catch (err) {
+      console.error("Error removing deleted order ID:", err);
+    }
+  };
 
   const isRealOrder = (o: any) => {
     if (!o || !o.id) return false;
@@ -173,8 +214,9 @@ async function startServer() {
 
   const fetchTradeLogOrdersFromServer = async (): Promise<any[]> => {
     const now = Date.now();
+    const deletedSet = new Set(getDeletedOrderIds());
     if (cachedTradeOrders.length > 0 && (now - lastTradeFetchTime) < 15000) {
-      return cachedTradeOrders;
+      return cachedTradeOrders.filter((o: any) => o && o.id && !deletedSet.has(o.id));
     }
 
     const fetchSheetCSV = async (gvizUrl: string, pubUrl: string): Promise<string> => {
@@ -201,15 +243,16 @@ async function startServer() {
       const tradeOrders = tradeCsv ? parseTradeSheetOrders(tradeCsv, "Sales") : [];
       const adminOrders = adminCsv ? parseTradeSheetOrders(adminCsv, "Admin") : [];
       const all = [...tradeOrders, ...adminOrders];
-      if (all.length > 0) {
-        cachedTradeOrders = all;
+      const valid = all.filter((o: any) => o && o.id && !deletedSet.has(o.id));
+      if (valid.length > 0) {
+        cachedTradeOrders = valid;
         lastTradeFetchTime = now;
-        return all;
+        return valid;
       }
     } catch (err) {
       console.warn("Failed to fetch trade log orders from Google Sheets:", err);
     }
-    return cachedTradeOrders;
+    return cachedTradeOrders.filter((o: any) => o && o.id && !deletedSet.has(o.id));
   };
 
   const getSavedOrders = (): any[] => {
@@ -218,7 +261,8 @@ async function startServer() {
         const raw = fs.readFileSync(ORDERS_FILE, "utf-8");
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
-          return list.filter(isRealOrder);
+          const deletedSet = new Set(getDeletedOrderIds());
+          return list.filter((o: any) => isRealOrder(o) && !deletedSet.has(o.id));
         }
       }
     } catch (err) {
@@ -587,21 +631,31 @@ async function startServer() {
   app.get("/api/trade-orders", async (req, res) => {
     try {
       const orders = await fetchTradeLogOrdersFromServer();
-      res.json({ success: true, orders });
+      const deletedOrderIds = getDeletedOrderIds();
+      const deletedSet = new Set(deletedOrderIds);
+      const activeOrders = orders.filter((o: any) => o && o.id && !deletedSet.has(o.id));
+      res.json({ success: true, orders: activeOrders, deletedOrderIds });
     } catch (err) {
       console.error("Error fetching trade orders:", err);
-      res.status(500).json({ success: false, error: String(err) });
+      res.status(500).json({ success: false, error: String(err), deletedOrderIds: getDeletedOrderIds() });
     }
   });
 
-  // Get all shared saved/pending orders across devices
+  // Get all shared saved/pending orders across devices with deleted order IDs
   app.get("/api/orders", async (req, res) => {
     try {
-      const orders = getSavedOrders();
-      res.json({ success: true, orders });
+      const deletedOrderIds = getDeletedOrderIds();
+      const deletedSet = new Set(deletedOrderIds);
+      const orders = getSavedOrders().filter((o: any) => !deletedSet.has(o.id));
+      res.json({ success: true, orders, deletedOrderIds });
     } catch (err) {
-      res.json({ success: true, orders: [] });
+      res.json({ success: true, orders: [], deletedOrderIds: getDeletedOrderIds() });
     }
+  });
+
+  // Get deleted order IDs
+  app.get("/api/orders/deleted", (req, res) => {
+    res.json({ success: true, deletedOrderIds: getDeletedOrderIds() });
   });
 
   // Save or update an order
@@ -611,6 +665,9 @@ async function startServer() {
       res.status(400).json({ error: "Order ID is required" });
       return;
     }
+    // If an order is explicitly saved afresh, ensure it is un-deleted
+    removeDeletedOrderId(order.id);
+
     const orders = getSavedOrders();
     const idx = orders.findIndex((o: any) => o.id === order.id);
     if (idx !== -1) {
@@ -629,17 +686,19 @@ async function startServer() {
       res.status(400).json({ error: "orders array required" });
       return;
     }
-    const currentOrders = getSavedOrders();
+    const deletedOrderIds = getDeletedOrderIds();
+    const deletedSet = new Set(deletedOrderIds);
+    const currentOrders = getSavedOrders().filter((o: any) => !deletedSet.has(o.id));
     const orderMap = new Map<string, any>();
 
-    // Existing server orders
+    // Existing server orders (strictly excluding deleted orders)
     currentOrders.filter(isRealOrder).forEach((o: any) => {
-      if (o && o.id) orderMap.set(o.id, o);
+      if (o && o.id && !deletedSet.has(o.id)) orderMap.set(o.id, o);
     });
 
-    // Merge incoming (ignoring any historical Log invoices)
+    // Merge incoming (strictly ignoring any deleted orders and historical Log invoices)
     incoming.filter(isRealOrder).forEach((o: any) => {
-      if (o && o.id) {
+      if (o && o.id && !deletedSet.has(o.id)) {
         if (!orderMap.has(o.id)) {
           orderMap.set(o.id, o);
         } else {
@@ -651,16 +710,22 @@ async function startServer() {
 
     const merged = Array.from(orderMap.values());
     saveOrdersToFile(merged);
-    res.json({ success: true, orders: merged });
+    res.json({ success: true, orders: merged, deletedOrderIds });
   });
 
   // Delete an order
   app.delete("/api/orders/:id", (req, res) => {
     const orderId = req.params.id;
+    addDeletedOrderId(orderId);
+
+    // Evict from in-memory trade orders cache immediately
+    cachedTradeOrders = cachedTradeOrders.filter((o: any) => o.id !== orderId);
+    lastTradeFetchTime = 0; // Force immediate fresh fetch from Google Sheets next time
+
     let orders = getSavedOrders();
     orders = orders.filter((o: any) => o.id !== orderId);
     saveOrdersToFile(orders);
-    res.json({ success: true });
+    res.json({ success: true, deletedOrderIds: getDeletedOrderIds() });
   });
 
   // Toggle hold on an order

@@ -1,20 +1,20 @@
 [
   {
     "id": "ADMIN00003",
-    "date": "2026-07-28T11:24:42.913Z",
-    "customerName": "其他",
-    "orderAmount": 2796,
+    "date": "2026/09/19 19:29:49",
+    "customerName": "落鋪",
+    "orderAmount": 396,
     "salesName": "Admin",
     "remark": "",
     "items": [
       {
-        "id": "1785237879409-6xyx2fxzm",
-        "name": "美素佳兒 1    12/箱",
-        "quantity": 12,
-        "price": 233,
+        "id": "ADMIN00003-item-2",
+        "name": "Merries (花王) XL 40片（4/箱）",
+        "quantity": 4,
+        "price": 99,
         "isOuterBox": true,
-        "unitsPerBox": 12,
-        "outerBoxUnit": "箱"
+        "unitsPerBox": 4,
+        "outerBoxUnit": "箱）"
       }
     ],
     "isKeyedIn": true,
@@ -22,20 +22,29 @@
   },
   {
     "id": "ADMIN00002",
-    "date": "2026-05-25T10:02:24.393Z",
-    "customerName": "HKTVMALL",
-    "orderAmount": 468,
+    "date": "2026/09/19 19:29:49",
+    "customerName": "落鋪",
+    "orderAmount": 744,
     "salesName": "Admin",
     "remark": "",
     "items": [
       {
-        "id": "1779703340987-i8brabvrj",
-        "name": "tempo 12卷紙",
-        "quantity": 12,
-        "price": 39,
+        "id": "ADMIN00002-item-3",
+        "name": "滴露沖涼950g 冰感薄荷套裝 (清涼淺藍)    6/箱",
+        "quantity": 6,
+        "price": 62,
         "isOuterBox": true,
-        "unitsPerBox": 12,
-        "outerBoxUnit": "打"
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00002-item-4",
+        "name": "滴露沖涼950g 經典松木套裝 (綠)    6/箱",
+        "quantity": 6,
+        "price": 62,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
       }
     ],
     "isKeyedIn": true,
@@ -199,7 +208,7 @@
     "remark": "",
     "items": [
       {
-        "id": "KASEY00001-item-21",
+        "id": "KASEY00001-item-6",
         "name": "(JP) Naturie 薏仁保濕面霜 180g",
         "quantity": 12,
         "price": 40,
@@ -220,7 +229,7 @@
     "remark": "",
     "items": [
       {
-        "id": "KASEY00002-item-15",
+        "id": "KASEY00002-item-1",
         "name": "桂格麥皮820g（藍）",
         "quantity": 12,
         "price": 999,
@@ -229,7 +238,7 @@
         "outerBoxUnit": "unit"
       },
       {
-        "id": "KASEY00002-item-16",
+        "id": "KASEY00002-item-2",
         "name": "桂格麥皮 820g (紅)    12/箱",
         "quantity": 12,
         "price": 15.2,
@@ -238,7 +247,7 @@
         "outerBoxUnit": "箱"
       },
       {
-        "id": "KASEY00002-item-17",
+        "id": "KASEY00002-item-3",
         "name": "桂格麥皮 800g (藍)    12/箱",
         "quantity": 12,
         "price": 14,
@@ -247,7 +256,7 @@
         "outerBoxUnit": "箱"
       },
       {
-        "id": "KASEY00002-item-18",
+        "id": "KASEY00002-item-4",
         "name": "桂格麥皮 800g (金)    12/箱",
         "quantity": 12,
         "price": 15,
@@ -256,7 +265,7 @@
         "outerBoxUnit": "箱"
       },
       {
-        "id": "KASEY00002-item-19",
+        "id": "KASEY00002-item-5",
         "name": "桂格麥皮 800g (紅)     12/盒",
         "quantity": 12,
         "price": 14,
@@ -449,6 +458,258 @@
       }
     ],
     "orderAmount": 1020,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KASEY00005",
+    "customerName": "$建民大藥行$",
+    "salesName": "KASEY",
+    "date": "2026/09/24 12:18:25",
+    "remark": "",
+    "items": [
+      {
+        "id": "KASEY00005-item-9",
+        "name": "幸福傷風素12粒",
+        "quantity": 12,
+        "price": 0,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 0,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KASEY00004",
+    "customerName": "$富泰藥房有限公司 (西環)$",
+    "salesName": "KASEY",
+    "date": "2026/09/24 11:14:33",
+    "remark": "",
+    "items": [
+      {
+        "id": "KASEY00004-item-8",
+        "name": "(JP) Fancl 燃脂丸 270粒 (90粒*3袋)",
+        "quantity": 12,
+        "price": 348,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 4176,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "ADMIN00008",
+    "customerName": "落鋪",
+    "salesName": "Admin",
+    "date": "2026/09/22 11:57:43",
+    "remark": "",
+    "items": [
+      {
+        "id": "ADMIN00008-item-20",
+        "name": "威露士消毒單支 (2.5L+洗內衣液)    6/箱",
+        "quantity": 6,
+        "price": 85,
+        "isOuterBox": true,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00008-item-21",
+        "name": "威露士濕紙巾七片九包裝 12/箱",
+        "quantity": 12,
+        "price": 26,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00008-item-22",
+        "name": "威露士（白色）洗手液三支裝450毫升 健康清香 8/箱",
+        "quantity": 8,
+        "price": 44,
+        "isOuterBox": true,
+        "unitsPerBox": 8,
+        "outerBoxUnit": "箱"
+      }
+    ],
+    "orderAmount": 1174,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "ADMIN00007",
+    "customerName": "落鋪",
+    "salesName": "Admin",
+    "date": "2026/09/22 10:57:33",
+    "remark": "",
+    "items": [
+      {
+        "id": "ADMIN00007-item-15",
+        "name": "KHO王子玫瑰皂沐浴露 680ml 葉嬰玫瑰",
+        "quantity": 12,
+        "price": 32,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "ADMIN00007-item-16",
+        "name": "KHO王子玫瑰皂沐浴露 680ml 小蒼蘭",
+        "quantity": 12,
+        "price": 32,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "ADMIN00007-item-17",
+        "name": "KHO王子玫瑰皂沐浴露 680ml 玫瑰精油",
+        "quantity": 12,
+        "price": 32,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "ADMIN00007-item-18",
+        "name": "ar fum衣物留香珠 鮮花玫瑰 （8/箱）",
+        "quantity": 8,
+        "price": 105,
+        "isOuterBox": true,
+        "unitsPerBox": 8,
+        "outerBoxUnit": "箱）"
+      },
+      {
+        "id": "ADMIN00007-item-19",
+        "name": "ar fum衣物留香珠  鮮花香紫丁（8/箱）",
+        "quantity": 8,
+        "price": 105,
+        "isOuterBox": true,
+        "unitsPerBox": 8,
+        "outerBoxUnit": "箱）"
+      }
+    ],
+    "orderAmount": 2832,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "ADMIN00006",
+    "customerName": "落鋪",
+    "salesName": "Admin",
+    "date": "2026/09/22 09:18:45",
+    "remark": "",
+    "items": [
+      {
+        "id": "ADMIN00006-item-6",
+        "name": "asahi 黑咖啡 400g 24/ box",
+        "quantity": 10,
+        "price": 5.5,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "ADMIN00006-item-7",
+        "name": "即飲子母奶225ml 原味 原箱  1/箱",
+        "quantity": 1,
+        "price": 118,
+        "isOuterBox": true,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00006-item-8",
+        "name": "即飲子母奶225ml 高鈣 原箱 1/箱",
+        "quantity": 1,
+        "price": 118,
+        "isOuterBox": true,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00006-item-9",
+        "name": "桂格麥皮820g（藍）",
+        "quantity": 12,
+        "price": 999,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "ADMIN00006-item-10",
+        "name": "桂格麥皮 820g (紅)    12/箱",
+        "quantity": 12,
+        "price": 15.2,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00006-item-11",
+        "name": "桂格麥皮 800g (藍)    12/箱",
+        "quantity": 12,
+        "price": 14,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00006-item-12",
+        "name": "桂格麥皮 800g (金)    12/箱",
+        "quantity": 12,
+        "price": 15,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "ADMIN00006-item-13",
+        "name": "桂格麥皮 800g (紅)     12/盒",
+        "quantity": 12,
+        "price": 14,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "盒"
+      },
+      {
+        "id": "ADMIN00006-item-14",
+        "name": "飛雪水770ml（原箱出2.8/支）",
+        "quantity": 2,
+        "price": 67.2,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 13111.8,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KASEY00003",
+    "customerName": "$建民大藥行$",
+    "salesName": "KASEY",
+    "date": "2026/09/20 11:37:58",
+    "remark": "明天送",
+    "items": [
+      {
+        "id": "KASEY00003-item-7",
+        "name": "曼秀雷敦sunplay aqua 美肌防曬隔離霜（行貨）",
+        "quantity": 24,
+        "price": 48,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 1152,
     "isKeyedIn": true,
     "isHeld": false
   }

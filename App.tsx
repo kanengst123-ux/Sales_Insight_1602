@@ -13,7 +13,8 @@ import {
   syncServerOrders,
   deleteServerOrder,
   toggleHoldServerOrder,
-  keyInServerOrder
+  keyInServerOrder,
+  purgeDeletedOrdersFromCache
 } from './services/dataService';
 import { getCachedItem } from './services/cacheService';
 import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product } from './types';
@@ -33,6 +34,7 @@ const mergeOrderLists = (
   local: SavedOrder[],
   cloud: SavedOrder[],
   server: SavedOrder[],
+  deletedIds: Set<string> = new Set(),
   recentlySubmitted: Set<string> = recentlySubmittedOrderIds
 ): SavedOrder[] => {
   const map = new Map<string, SavedOrder>();
@@ -40,9 +42,8 @@ const mergeOrderLists = (
 
   // 1. Cloud orders come EXCLUSIVELY from 'Trade_log' & 'Trade_log_admin' tabs of 'Product_list'
   // Every order in cloud is an authentic, confirmed keyed-in order.
-  // The 'Log' tab has nothing to do with '訂單列表'.
   for (const o of cloud) {
-    if (o && o.id) {
+    if (o && o.id && !deletedIds.has(o.id)) {
       validCloudIds.add(o.id);
       map.set(o.id, { ...o, isKeyedIn: true, isHeld: false });
     }
@@ -50,7 +51,7 @@ const mergeOrderLists = (
 
   // Helper to merge or filter candidates from server or local
   const mergeCandidate = (o: SavedOrder) => {
-    if (!o || !o.id) return;
+    if (!o || !o.id || deletedIds.has(o.id)) return;
     
     // If this order is confirmed in Trade_log or Trade_log_admin:
     if (validCloudIds.has(o.id)) {
@@ -66,7 +67,6 @@ const mergeOrderLists = (
     // If NOT in Trade_log / Trade_log_admin:
     // ONLY keep if it is NOT keyed in yet (i.e. pending draft), or is currently held,
     // or was recently submitted in the current session.
-    // Any keyed-in order not in Trade_log / Trade_log_admin is an obsolete record from 'Log' and is DISCARDED.
     if (!o.isKeyedIn || o.isHeld || recentlySubmitted.has(o.id)) {
       map.set(o.id, o);
     }
@@ -96,15 +96,31 @@ const App: React.FC = () => {
   const [sheetId, setSheetId] = useState<string>('');
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
   const [isKeyingIn, setIsKeyingIn] = useState<boolean>(false);
+  const [deletedOrderIds, setDeletedOrderIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('ws_deleted_order_ids');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch {}
+    return new Set<string>();
+  });
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>(() => {
     try {
+      let delSet = new Set<string>();
+      const delStored = localStorage.getItem('ws_deleted_order_ids');
+      if (delStored) {
+        const parsedDel = JSON.parse(delStored);
+        if (Array.isArray(parsedDel)) delSet = new Set(parsedDel);
+      }
       const stored = localStorage.getItem('榮昇_saved_orders');
       if (!stored) return [];
       const parsed = JSON.parse(stored);
       if (!Array.isArray(parsed)) return [];
-      // STRICT FILTER: On initial startup, only keep unsubmitted/held drafts from localStorage.
-      // All keyed-in orders will be loaded freshly and exclusively from Trade_log & Trade_log_admin!
-      return parsed.filter(o => o && o.id && (!o.isKeyedIn || o.isHeld));
+      // STRICT FILTER: On initial startup, only keep unsubmitted/held drafts from localStorage,
+      // and strictly exclude any previously deleted orders.
+      return parsed.filter(o => o && o.id && !delSet.has(o.id) && (!o.isKeyedIn || o.isHeld));
     } catch {
       return [];
     }
@@ -189,13 +205,32 @@ const App: React.FC = () => {
     if (deletingOrderIdsRef.current.has(orderId)) return;
     deletingOrderIdsRef.current.add(orderId);
 
+    // 1. Immediately record in deletedOrderIds state and localStorage
+    const nextDeletedSet = new Set(deletedOrderIds).add(orderId);
+    setDeletedOrderIds(nextDeletedSet);
+    localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
+
+    // 2. Remove immediately from local state and localStorage
     const orderToDelete = savedOrders.find(o => o.id === orderId);
-    setSavedOrders(prev => prev.filter(o => o.id !== orderId));
+    setSavedOrders(prev => {
+      const next = prev.filter(o => o.id !== orderId);
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
+    });
+
+    // 3. Purge from persistent IndexedDB / localStorage trade cache
+    purgeDeletedOrdersFromCache([orderId]);
 
     try {
-      await deleteServerOrder(orderId);
+      // 4. Send delete to server (adds to server tombstone & invalidates server cache)
+      const serverDeletedList = await deleteServerOrder(orderId);
+      if (Array.isArray(serverDeletedList)) {
+        serverDeletedList.forEach(id => nextDeletedSet.add(id));
+        setDeletedOrderIds(new Set(nextDeletedSet));
+        localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
+      }
 
-      // When deleting a keyed-in order (whether held or not):
+      // 5. When deleting a keyed-in order (whether held or not):
       // Because putting an order on '暫存' keeps the goods on hold (stock unchanged),
       // deleting the order now releases the reserved goods and replenishes stock in Google Sheet!
       if (orderToDelete && orderToDelete.isKeyedIn) {
@@ -374,13 +409,29 @@ const App: React.FC = () => {
     }
     setError(null);
     try {
-      const [salesResult, customerResult, productResult, serverOrdersResult, cloudTradeOrders] = await Promise.all([
+      const [salesResult, customerResult, productResult, serverOrdersData, cloudTradeOrders] = await Promise.all([
         fetchSalesData(customId),
         fetchCustomerGrades(),
         fetchProducts(),
         fetchServerOrders(),
         fetchCloudTradeLogOrders()
       ]);
+
+      const { orders: serverOrdersResult, deletedOrderIds: serverDeletedIds } = serverOrdersData;
+
+      // Update deleted orders tracking
+      const activeDeletedSet = new Set<string>();
+      try {
+        const stored = localStorage.getItem('ws_deleted_order_ids');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) parsed.forEach(id => activeDeletedSet.add(id));
+        }
+      } catch {}
+      serverDeletedIds.forEach(id => activeDeletedSet.add(id));
+      localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(activeDeletedSet)));
+      setDeletedOrderIds(activeDeletedSet);
+      purgeDeletedOrdersFromCache(Array.from(activeDeletedSet));
 
       const { data, source } = salesResult;
       
@@ -397,7 +448,9 @@ const App: React.FC = () => {
 
         // Orders in '訂單列表' strictly come ONLY from 'Trade_log' & 'Trade_log_admin'
         setSavedOrders(prev => {
-          const merged = mergeOrderLists(prev, cloudTradeOrders, serverOrdersResult);
+          const cleanedPrev = prev.filter(o => !activeDeletedSet.has(o.id));
+          const merged = mergeOrderLists(cleanedPrev, cloudTradeOrders, serverOrdersResult, activeDeletedSet);
+          localStorage.setItem('榮昇_saved_orders', JSON.stringify(merged));
           syncServerOrders(merged).catch(() => {});
           return merged;
         });
@@ -414,12 +467,29 @@ const App: React.FC = () => {
 
   const syncAndRefreshOrders = useCallback(async () => {
     try {
-      const [serverOrdersResult, cloudTradeOrders] = await Promise.all([
+      const [serverOrdersData, cloudTradeOrders] = await Promise.all([
         fetchServerOrders(),
         fetchCloudTradeLogOrders()
       ]);
+      const { orders: serverOrdersResult, deletedOrderIds: serverDeletedIds } = serverOrdersData;
+
+      const activeDeletedSet = new Set<string>();
+      try {
+        const stored = localStorage.getItem('ws_deleted_order_ids');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) parsed.forEach(id => activeDeletedSet.add(id));
+        }
+      } catch {}
+      serverDeletedIds.forEach(id => activeDeletedSet.add(id));
+      localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(activeDeletedSet)));
+      setDeletedOrderIds(activeDeletedSet);
+      purgeDeletedOrdersFromCache(Array.from(activeDeletedSet));
+
       setSavedOrders(prev => {
-        const merged = mergeOrderLists(prev, cloudTradeOrders, serverOrdersResult);
+        const cleanedPrev = prev.filter(o => !activeDeletedSet.has(o.id));
+        const merged = mergeOrderLists(cleanedPrev, cloudTradeOrders, serverOrdersResult, activeDeletedSet);
+        localStorage.setItem('榮昇_saved_orders', JSON.stringify(merged));
         return merged;
       });
     } catch (e) {
@@ -428,11 +498,13 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'saved_orders') return;
-    const timer = setInterval(() => {
+    if (activeTab === 'saved_orders') {
       syncAndRefreshOrders();
-    }, 12000);
-    return () => clearInterval(timer);
+      const timer = setInterval(() => {
+        syncAndRefreshOrders();
+      }, 5000);
+      return () => clearInterval(timer);
+    }
   }, [activeTab, syncAndRefreshOrders]);
 
   useEffect(() => {
@@ -465,7 +537,22 @@ const App: React.FC = () => {
           setDataSource('local');
           setLoading(false); // Instantly dismiss the "Syncing Engine" screen!
 
-          setSavedOrders(prev => mergeOrderLists(prev, cachedCloudOrders || [], serverOrdersResult));
+          const hydrationDeletedSet = new Set<string>();
+          try {
+            const stored = localStorage.getItem('ws_deleted_order_ids');
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed)) parsed.forEach(id => hydrationDeletedSet.add(id));
+            }
+          } catch {}
+          if (serverOrdersResult?.deletedOrderIds) {
+            serverOrdersResult.deletedOrderIds.forEach((id: string) => hydrationDeletedSet.add(id));
+          }
+
+          setSavedOrders(prev => {
+            const cleanedPrev = prev.filter(o => !hydrationDeletedSet.has(o.id));
+            return mergeOrderLists(cleanedPrev, cachedCloudOrders || [], serverOrdersResult?.orders || [], hydrationDeletedSet);
+          });
 
           // Silently revalidate in background to get latest changes without freezing UI
           loadData(undefined, true);

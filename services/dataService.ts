@@ -877,6 +877,20 @@ export const TRADE_LOG_ADMIN_GVIZ_URL = `https://docs.google.com/spreadsheets/d/
 export const TRADE_LOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=1412322886&single=true&output=csv';
 export const TRADE_LOG_ADMIN_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStdyv4mUaIdO-jPeUwBfxMxBZbCkbNEtk8VNhyrpiAInlNb7w3jli2jYtERyVPp94aWMeVuP4N0XNv/pub?gid=2071438386&single=true&output=csv';
 
+export const purgeDeletedOrdersFromCache = async (deletedIds: string[]): Promise<void> => {
+  if (!deletedIds || deletedIds.length === 0) return;
+  const set = new Set(deletedIds);
+  try {
+    const cached = await getCachedItem<SavedOrder[]>('cloud_trade_orders');
+    if (cached && Array.isArray(cached)) {
+      const filtered = cached.filter(o => o && o.id && !set.has(o.id));
+      await setCachedItem('cloud_trade_orders', filtered);
+    }
+  } catch (e) {
+    console.warn('Error purging deleted orders from cache:', e);
+  }
+};
+
 /**
  * Fetches orders exclusively from the 'Trade_log' tab (regular sales reps)
  * and 'Trade_log_admin' tab (admin user) of the 'Product_list' Google Sheet.
@@ -884,14 +898,28 @@ export const TRADE_LOG_ADMIN_CSV_URL = 'https://docs.google.com/spreadsheets/d/e
  * NOTHING to do with '訂單列表'.
  */
 export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
+  let localDeletedSet = new Set<string>();
+  try {
+    const stored = localStorage.getItem('ws_deleted_order_ids');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) parsed.forEach(id => localDeletedSet.add(id));
+    }
+  } catch {}
+
   // 1. First priority: try our dedicated backend API which queries Product_list in real-time
   try {
     const apiRes = await fetchWithTimeout('/api/trade-orders', { method: 'GET' }, 4000);
     if (apiRes.ok) {
       const json = await apiRes.json();
-      if (json && json.success && Array.isArray(json.orders) && json.orders.length > 0) {
-        setCachedItem('cloud_trade_orders', json.orders);
-        return json.orders;
+      if (json && json.success && Array.isArray(json.orders)) {
+        if (Array.isArray(json.deletedOrderIds)) {
+          json.deletedOrderIds.forEach((id: string) => localDeletedSet.add(id));
+          localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(localDeletedSet)));
+        }
+        const filtered = json.orders.filter((o: any) => o && o.id && !localDeletedSet.has(o.id));
+        setCachedItem('cloud_trade_orders', filtered);
+        return filtered;
       }
     }
   } catch (apiErr) {
@@ -1027,7 +1055,7 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
 
     const regularOrders = regularCsv ? parseTradeLogRows(regularCsv, 'Sales') : [];
     const adminOrders = adminCsv ? parseTradeLogRows(adminCsv, 'Admin') : [];
-    const combined = [...regularOrders, ...adminOrders];
+    const combined = [...regularOrders, ...adminOrders].filter(o => o && o.id && !localDeletedSet.has(o.id));
 
     if (combined.length > 0) {
       setCachedItem('cloud_trade_orders', combined);
@@ -1041,7 +1069,7 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
   try {
     const cached = await getCachedItem<SavedOrder[]>('cloud_trade_orders');
     if (cached && Array.isArray(cached) && cached.length > 0) {
-      return cached;
+      return cached.filter(o => o && o.id && !localDeletedSet.has(o.id));
     }
   } catch (e) {}
 
@@ -1119,22 +1147,30 @@ export const extractOrdersFromSalesRecords = (records: SaleRecord[]): SavedOrder
   return Array.from(orderMap.values());
 };
 
+export interface ServerOrdersResult {
+  orders: SavedOrder[];
+  deletedOrderIds: string[];
+}
+
 /**
- * Fetch cross-device pending & saved orders from the server
+ * Fetch cross-device pending & saved orders and deleted order IDs from the server
  */
-export const fetchServerOrders = async (): Promise<SavedOrder[]> => {
+export const fetchServerOrders = async (): Promise<ServerOrdersResult> => {
   try {
     const res = await fetchWithTimeout('/api/orders', { method: 'GET' }, 4000);
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.orders)) {
-        return json.orders;
+      if (json && json.success) {
+        return {
+          orders: Array.isArray(json.orders) ? json.orders : [],
+          deletedOrderIds: Array.isArray(json.deletedOrderIds) ? json.deletedOrderIds : []
+        };
       }
     }
   } catch (e) {
     console.warn('Could not fetch server orders:', e);
   }
-  return [];
+  return { orders: [], deletedOrderIds: [] };
 };
 
 /**
@@ -1157,7 +1193,7 @@ export const saveServerOrder = async (order: SavedOrder): Promise<boolean> => {
 /**
  * Batch sync orders with the server
  */
-export const syncServerOrders = async (orders: SavedOrder[]): Promise<SavedOrder[]> => {
+export const syncServerOrders = async (orders: SavedOrder[]): Promise<ServerOrdersResult> => {
   try {
     const res = await fetch('/api/orders/sync', {
       method: 'POST',
@@ -1166,29 +1202,37 @@ export const syncServerOrders = async (orders: SavedOrder[]): Promise<SavedOrder
     });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.orders)) {
-        return json.orders;
+      if (json && json.success) {
+        return {
+          orders: Array.isArray(json.orders) ? json.orders : orders,
+          deletedOrderIds: Array.isArray(json.deletedOrderIds) ? json.deletedOrderIds : []
+        };
       }
     }
   } catch (e) {
     console.warn('Could not sync orders with server:', e);
   }
-  return orders;
+  return { orders, deletedOrderIds: [] };
 };
 
 /**
  * Delete an order from the server
  */
-export const deleteServerOrder = async (orderId: string): Promise<boolean> => {
+export const deleteServerOrder = async (orderId: string): Promise<string[]> => {
   try {
     const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: 'DELETE'
     });
-    return res.ok;
+    if (res.ok) {
+      const json = await res.json();
+      if (json && Array.isArray(json.deletedOrderIds)) {
+        return json.deletedOrderIds;
+      }
+    }
   } catch (e) {
     console.warn('Could not delete order from server:', e);
-    return false;
   }
+  return [orderId];
 };
 
 /**
