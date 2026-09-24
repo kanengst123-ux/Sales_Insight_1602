@@ -845,12 +845,15 @@ export const writeTradeLogToSheet = async (rows: any[][], targetSheet: string = 
   }
 };
 
-export const deleteOrderFromSheet = async (orderId: string): Promise<boolean> => {
+export const deleteOrderFromSheet = async (orderId: string, rows?: any[][]): Promise<boolean> => {
   try {
-    const payload = {
+    const payload: { action: string; orderId: string; rows?: any[][] } = {
       action: 'deleteOrder',
       orderId
     };
+    if (rows && rows.length > 0) {
+      payload.rows = rows;
+    }
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',

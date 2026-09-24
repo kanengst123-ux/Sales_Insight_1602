@@ -48,6 +48,7 @@ const OrderList: React.FC<OrderListProps> = ({
 }) => {
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'KEYED_IN' | 'HELD'>('ALL');
@@ -734,20 +735,28 @@ const OrderList: React.FC<OrderListProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={isDeleting}
                   onClick={() => setOrderToDelete(null)}
-                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors"
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    onDeleteOrder(orderToDelete.id);
-                    setOrderToDelete(null);
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    if (isDeleting) return;
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteOrder(orderToDelete.id);
+                    } finally {
+                      setIsDeleting(false);
+                      setOrderToDelete(null);
+                    }
                   }}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-colors"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-colors flex items-center justify-center gap-1.5"
                 >
-                  確認刪除
+                  {isDeleting ? '刪除中...' : '確認刪除'}
                 </button>
               </div>
             </motion.div>

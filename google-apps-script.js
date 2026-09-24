@@ -168,13 +168,18 @@ function doPost(e) {
         }
       }
 
-      // Delete existing rows with matching order IDs across all trade log tabs
+      // Delete existing rows with matching order IDs across all trade log tabs (deduplicated by sheetId)
       var uniqueIdsToDelete = Object.keys(incomingIds);
       if (uniqueIdsToDelete.length > 0) {
-        var logSheetsToClean = ['Trade_Log', 'trade_log', '交易記錄', 'Trade_log_admin', 'Trade_Log_admin', 'trade_log_admin'];
-        logSheetsToClean.forEach(function(sName) {
-          var targetLogSheet = ss.getSheetByName(sName);
-          if (targetLogSheet) {
+        var allSheetsForClean = ss.getSheets();
+        var visitedCleanSheetIds = {};
+        for (var cIdx = 0; cIdx < allSheetsForClean.length; cIdx++) {
+          var targetLogSheet = allSheetsForClean[cIdx];
+          var sId = targetLogSheet.getSheetId();
+          if (visitedCleanSheetIds[sId]) continue;
+          var sNameNorm = targetLogSheet.getName().toLowerCase().replace(/[\s_-]/g, '');
+          if (sNameNorm === 'tradelog' || sNameNorm === 'tradelogadmin' || targetLogSheet.getName() === '交易記錄') {
+            visitedCleanSheetIds[sId] = true;
             var lastRow = targetLogSheet.getLastRow();
             if (lastRow > 1) {
               var colMValues = targetLogSheet.getRange(2, 13, lastRow - 1, 1).getValues();
@@ -186,7 +191,7 @@ function doPost(e) {
               }
             }
           }
-        });
+        }
       }
 
       // 3b. Append new trade rows
@@ -287,21 +292,31 @@ function doPost(e) {
       var orderId = param.orderId;
       var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-      // If orderId is provided, find and gather the rows to delete across trade log sheets
-      var logSheetsToCheck = ['Trade_Log', 'trade_log', '交易記錄', 'Trade_log_admin', 'Trade_Log_admin', 'trade_log_admin'];
-      
+      // Get unique trade log sheets from the spreadsheet (prevent duplicates)
+      var allSheetsForDelete = ss.getSheets();
+      var logSheets = [];
+      var visitedDeleteSheetIds = {};
+
+      for (var dIdx = 0; dIdx < allSheetsForDelete.length; dIdx++) {
+        var curSheet = allSheetsForDelete[dIdx];
+        var curId = curSheet.getSheetId();
+        if (visitedDeleteSheetIds[curId]) continue;
+        var curNorm = curSheet.getName().toLowerCase().replace(/[\s_-]/g, '');
+        if (curNorm === 'tradelog' || curNorm === 'tradelogadmin' || curSheet.getName() === '交易記錄') {
+          visitedDeleteSheetIds[curId] = true;
+          logSheets.push(curSheet);
+        }
+      }
+
       if (orderId && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
         rowValuesToReplenish = [];
-        logSheetsToCheck.forEach(function(sName) {
-          var s = ss.getSheetByName(sName);
-          if (s) {
-            var lRow = s.getLastRow();
-            if (lRow > 1) {
-              var vals = s.getRange(1, 1, lRow, 14).getValues();
-              for (var r = 1; r < lRow; r++) {
-                if (vals[r][12] && vals[r][12].toString().trim() === orderId.toString().trim()) {
-                  rowValuesToReplenish.push(vals[r]);
-                }
+        logSheets.forEach(function(s) {
+          var lRow = s.getLastRow();
+          if (lRow > 1) {
+            var vals = s.getRange(1, 1, lRow, 14).getValues();
+            for (var r = 1; r < lRow; r++) {
+              if (vals[r][12] && vals[r][12].toString().trim() === orderId.toString().trim()) {
+                rowValuesToReplenish.push(vals[r]);
               }
             }
           }
@@ -392,18 +407,15 @@ function doPost(e) {
       // Delete order rows from sheets
       var deletedCount = 0;
       if (orderId) {
-        logSheetsToCheck.forEach(function(sName) {
-          var s = ss.getSheetByName(sName);
-          if (s) {
-            var lastRow = s.getLastRow();
-            if (lastRow > 1) {
-              var colMValues = s.getRange(2, 13, lastRow - 1, 1).getValues();
-              for (var r = lastRow; r >= 2; r--) {
-                var cellValue = colMValues[r - 2][0];
-                if (cellValue && cellValue.toString().trim() === orderId.toString().trim()) {
-                  s.deleteRow(r);
-                  deletedCount++;
-                }
+        logSheets.forEach(function(s) {
+          var lastRow = s.getLastRow();
+          if (lastRow > 1) {
+            var colMValues = s.getRange(2, 13, lastRow - 1, 1).getValues();
+            for (var r = lastRow; r >= 2; r--) {
+              var cellValue = colMValues[r - 2][0];
+              if (cellValue && cellValue.toString().trim() === orderId.toString().trim()) {
+                s.deleteRow(r);
+                deletedCount++;
               }
             }
           }

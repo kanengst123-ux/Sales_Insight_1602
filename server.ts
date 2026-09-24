@@ -670,9 +670,6 @@ async function startServer() {
     const order = orders.find((o: any) => o.id === orderId);
     if (order) {
       order.isHeld = !order.isHeld;
-      if (order.isHeld) {
-        order.isKeyedIn = false;
-      }
       saveOrdersToFile(orders);
       res.json({ success: true, order });
     } else {

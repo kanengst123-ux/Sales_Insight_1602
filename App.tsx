@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   fetchSalesData, 
   calculateAnalytics, 
@@ -141,14 +141,72 @@ const App: React.FC = () => {
     setActiveTab('order');
   };
 
+  const deletingOrderIdsRef = useRef<Set<string>>(new Set());
+
+  const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
+    const match = productName.match(/(\d+)\/([^\s\d/]+)/);
+    if (match) {
+      const outerQty = parseInt(match[1], 10);
+      const outerUnit = match[2];
+      if (!isNaN(outerQty) && outerQty > 0) {
+        return { outerQty, outerUnit };
+      }
+    }
+    return null;
+  };
+
+  const buildTradeRowsForOrder = (order: SavedOrder): any[][] => {
+    if (!order.items || order.items.length === 0) return [];
+    return order.items.map(item => {
+      const parsed = parseProductPacking(item.name);
+      let colD_qty = item.quantity;
+      let colE_unit = "unit";
+      let colF_ref = 1;
+      if (parsed && item.quantity % parsed.outerQty === 0) {
+        colD_qty = item.quantity / parsed.outerQty;
+        colE_unit = parsed.outerUnit;
+        colF_ref = parsed.outerQty;
+      }
+      return [
+        "",                         // Col A: Date
+        item.name,                  // Col B: Item
+        "",                         // Col C: Product ID
+        colD_qty,                   // Col D: Quantity
+        colE_unit,                  // Col E: Unit
+        colF_ref,                   // Col F: Ref
+        item.price,                 // Col G: Price
+        order.customerName,         // Col H: Customer
+        "",                         // Col I: District
+        item.quantity * item.price, // Col J: Subtotal
+        order.salesName,            // Col K: User
+        "",                         // Col L: Status
+        order.id                    // Col M: Order ID
+      ];
+    });
+  };
+
   const handleDeleteOrder = async (orderId: string) => {
+    if (deletingOrderIdsRef.current.has(orderId)) return;
+    deletingOrderIdsRef.current.add(orderId);
+
+    const orderToDelete = savedOrders.find(o => o.id === orderId);
     setSavedOrders(prev => prev.filter(o => o.id !== orderId));
+
     try {
       await deleteServerOrder(orderId);
-      await deleteOrderFromSheet(orderId);
+
+      // When deleting a keyed-in order (whether held or not):
+      // Because putting an order on '暫存' keeps the goods on hold (stock unchanged),
+      // deleting the order now releases the reserved goods and replenishes stock in Google Sheet!
+      if (orderToDelete && orderToDelete.isKeyedIn) {
+        const rowsToSend = buildTradeRowsForOrder(orderToDelete);
+        await deleteOrderFromSheet(orderId, rowsToSend);
+      }
       loadData(undefined, true);
     } catch (e) {
       console.warn("Failed to delete order:", e);
+    } finally {
+      deletingOrderIdsRef.current.delete(orderId);
     }
   };
 
@@ -158,9 +216,9 @@ const App: React.FC = () => {
 
     const newIsHeld = !order.isHeld;
 
-    // Update local state
+    // Update local state - preserve isKeyedIn and toggle isHeld
     setSavedOrders(prev => prev.map(o => 
-      o.id === orderId ? { ...o, isHeld: newIsHeld, isKeyedIn: newIsHeld ? false : o.isKeyedIn } : o
+      o.id === orderId ? { ...o, isHeld: newIsHeld } : o
     ));
 
     try {
@@ -169,15 +227,8 @@ const App: React.FC = () => {
       console.warn("Failed to toggle hold on server:", e);
     }
 
-    if (newIsHeld) {
-      try {
-        await deleteOrderFromSheet(orderId);
-        // Refresh the local data to reflect deletion/updates
-        loadData(undefined, true);
-      } catch (err) {
-        console.error("Failed to delete held order from sheet:", err);
-      }
-    }
+    // Per user instruction: when '暫存' is pressed, do NOT change the stock level!
+    // The goods are on hold for this order, so stock remains reserved/deducted.
   };
 
   const generateNextOrderId = (userName: string): string => {
@@ -231,18 +282,6 @@ const App: React.FC = () => {
         const min = String(date.getMinutes()).padStart(2, '0');
         const ss = String(date.getSeconds()).padStart(2, '0');
         return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
-      };
-
-      const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
-        const match = productName.match(/(\d+)\/([^\s\d/]+)/);
-        if (match) {
-          const outerQty = parseInt(match[1], 10);
-          const outerUnit = match[2];
-          if (!isNaN(outerQty) && outerQty > 0) {
-            return { outerQty, outerUnit };
-          }
-        }
-        return null;
       };
 
       const sentTime = formatDateTime(new Date());
