@@ -629,6 +629,12 @@ async function startServer() {
 
   // Get orders directly from Trade_log and Trade_log_admin tabs of Product_list
   app.get("/api/trade-orders", async (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    if (req.query.force === "true") {
+      lastTradeFetchTime = 0;
+    }
     try {
       const orders = await fetchTradeLogOrdersFromServer();
       const deletedOrderIds = getDeletedOrderIds();
@@ -643,6 +649,9 @@ async function startServer() {
 
   // Get all shared saved/pending orders across devices with deleted order IDs
   app.get("/api/orders", async (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     try {
       const deletedOrderIds = getDeletedOrderIds();
       const deletedSet = new Set(deletedOrderIds);

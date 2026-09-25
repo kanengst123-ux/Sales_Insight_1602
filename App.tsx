@@ -56,6 +56,26 @@ const mergeOrderLists = (
     // If this order is confirmed in Trade_log or Trade_log_admin:
     if (validCloudIds.has(o.id)) {
       const cloudOrder = map.get(o.id)!;
+      // If the local/server order has user modifications (e.g. added products, edited quantities/prices, or unkeyed status):
+      const isLocallyEdited = !o.isKeyedIn ||
+        (o.items && o.items.length !== cloudOrder.items?.length) ||
+        (o.updatedAt && (!cloudOrder.updatedAt || o.updatedAt > cloudOrder.updatedAt)) ||
+        (o.orderAmount !== undefined && o.orderAmount !== cloudOrder.orderAmount);
+
+      if (isLocallyEdited) {
+        map.set(o.id, {
+          ...cloudOrder,
+          ...o,
+          items: o.items && o.items.length > 0 ? o.items : cloudOrder.items,
+          orderAmount: o.orderAmount !== undefined ? o.orderAmount : cloudOrder.orderAmount,
+          remark: o.remark !== undefined ? o.remark : cloudOrder.remark,
+          isHeld: o.isHeld ?? cloudOrder.isHeld,
+          isKeyedIn: false,
+          updatedAt: o.updatedAt || Date.now()
+        });
+        return;
+      }
+
       map.set(o.id, {
         ...cloudOrder,
         remark: o.remark || cloudOrder.remark,

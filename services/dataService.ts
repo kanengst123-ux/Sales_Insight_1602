@@ -897,7 +897,7 @@ export const purgeDeletedOrdersFromCache = async (deletedIds: string[]): Promise
  * The Google Sheet tab 'Log' contains raw historical transaction logs and has
  * NOTHING to do with '訂單列表'.
  */
-export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
+export const fetchCloudTradeLogOrders = async (forceRefresh: boolean = false): Promise<SavedOrder[]> => {
   let localDeletedSet = new Set<string>();
   try {
     const stored = localStorage.getItem('ws_deleted_order_ids');
@@ -909,7 +909,8 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
 
   // 1. First priority: try our dedicated backend API which queries Product_list in real-time
   try {
-    const apiRes = await fetchWithTimeout('/api/trade-orders', { method: 'GET' }, 4000);
+    const url = `/api/trade-orders?_t=${Date.now()}${forceRefresh ? '&force=true' : ''}`;
+    const apiRes = await fetchWithTimeout(url, { method: 'GET', cache: 'no-store' }, 8000);
     if (apiRes.ok) {
       const json = await apiRes.json();
       if (json && json.success && Array.isArray(json.orders)) {
@@ -1034,14 +1035,14 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
 
   const fetchCsvText = async (gvizUrl: string, pubUrl: string): Promise<string> => {
     try {
-      const res1 = await fetchWithTimeout(gvizUrl, { method: 'GET' }, 4000);
+      const res1 = await fetchWithTimeout(`${gvizUrl}&_t=${Date.now()}`, { method: 'GET', cache: 'no-store' }, 8000);
       if (res1.ok) {
         const txt = await res1.text();
         if (txt.length > 50) return txt;
       }
     } catch {}
     try {
-      const res2 = await fetchWithTimeout(`${pubUrl}&t=${Date.now()}`, { method: 'GET' }, 4000);
+      const res2 = await fetchWithTimeout(`${pubUrl}&t=${Date.now()}`, { method: 'GET', cache: 'no-store' }, 8000);
       if (res2.ok) return await res2.text();
     } catch {}
     return '';
@@ -1157,7 +1158,7 @@ export interface ServerOrdersResult {
  */
 export const fetchServerOrders = async (): Promise<ServerOrdersResult> => {
   try {
-    const res = await fetchWithTimeout('/api/orders', { method: 'GET' }, 4000);
+    const res = await fetchWithTimeout(`/api/orders?_t=${Date.now()}`, { method: 'GET', cache: 'no-store' }, 8000);
     if (res.ok) {
       const json = await res.json();
       if (json && json.success) {

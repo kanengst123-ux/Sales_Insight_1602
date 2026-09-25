@@ -100,4 +100,5 @@ export interface SavedOrder {
   items: OrderItem[];
   isHeld?: boolean;
   isKeyedIn?: boolean;
+  updatedAt?: number;
 }
