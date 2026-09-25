@@ -226,11 +226,55 @@ function handleAddOrUpdateProduct(param) {
   var quantity = param.quantity;
   var remarks = param.remarks;
 
+  // Resolve headers dynamically from row 1 to guarantee exact column placement
+  var lastCol = Math.max(sheet.getLastColumn(), 57);
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colMap = {};
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = (headerRow[c] || "").toString().trim().toLowerCase();
+    if (h) colMap[h] = c + 1; // 1-based index
+  }
+
+  // Exact column resolution with standard fallbacks:
+  // Col A (1): URL
+  // Col B (2): Product ID
+  // Col C (3): Title
+  // Col D (4): Description
+  // Col N (14): Cost
+  // Col O (15): Price
+  // Col R (18): Discounted Price For Member Tier - GOLD (Grade A)
+  // Col S (19): Discounted Price For Member Tier - SILVER (Grade B)
+  // Col T (20): Discounted Price For Member Tier - Basic (Grade C)
+  // Col U (21): Enable volume price
+  // Col AB (28): Unlimited stock
+  // Col AC (29): Stock
+  // Col AD (30): Cat
+  // Col AF (32): list
+  // Col AU (47): Publish Status
+  // Col AV (48): Listing status
+
+  var colUrl = colMap['url'] || 1;
+  var colId = colMap['product id'] || 2;
+  var colTitle = colMap['title'] || colMap['name'] || 3;
+  var colDesc = colMap['description'] || 4;
+  var colCost = colMap['cost'] || 14;
+  var colPrice = colMap['price'] || 15;
+  var colGold = colMap['discounted price for member tier - gold'] || 18;
+  var colSilver = colMap['discounted price for member tier - silver'] || 19;
+  var colBasic = colMap['discounted price for member tier - basic'] || 20;
+  var colVol = colMap['enable volume price'] || 21;
+  var colUnlimited = colMap['unlimited stock'] || 28;
+  var colStock = colMap['stock'] || 29;
+  var colCat = colMap['cat'] || 30;
+  var colList = colMap['list'] || 32; // Col AF
+  var colPubStatus = colMap['publish status'] || 47;
+  var colListStatus = colMap['listing status'] || 48;
+
   var data = sheet.getDataRange().getValues();
   var foundIndex = -1;
   for (var i = 1; i < data.length; i++) {
-    var rowName = (data[i][2] || "").toString().trim();
-    var rowId = (data[i][1] || "").toString().trim();
+    var rowName = (data[i][colTitle - 1] || "").toString().trim();
+    var rowId = (data[i][colId - 1] || "").toString().trim();
     if ((id && rowId === id.toString().trim()) || (name && rowName === name.toString().trim())) {
       foundIndex = i;
       break;
@@ -240,41 +284,54 @@ function handleAddOrUpdateProduct(param) {
   var rowToUpdate = foundIndex !== -1 ? foundIndex + 1 : sheet.getLastRow() + 1;
 
   if (foundIndex === -1) {
-    sheet.getRange(rowToUpdate, 1).setValue(new Date()); // Col A: Timestamp
-    sheet.getRange(rowToUpdate, 2).setValue(id || "");  // Col B: SKU / ID
-    sheet.getRange(rowToUpdate, 3).setValue(name || ""); // Col C: Product Name
-    sheet.getRange(rowToUpdate, 4).setValue(id || "");  // Col D: Metadata / SKU ID
+    // New product insertion:
+    sheet.getRange(rowToUpdate, colUrl).setValue("");                          // Col A: URL (Do NOT put timestamp!)
+    sheet.getRange(rowToUpdate, colId).setValue(id || "");                     // Col B: Product ID
+    sheet.getRange(rowToUpdate, colTitle).setValue(name || "");                // Col C: Title (Product Name)
+    sheet.getRange(rowToUpdate, colDesc).setValue(param.description || "");    // Col D: Description (Do NOT put ID!)
+    sheet.getRange(rowToUpdate, colCost).setValue(param.cost !== undefined ? param.cost : 0); // Col N: Cost
+    sheet.getRange(rowToUpdate, colVol).setValue(0);                           // Col U: Enable volume price
+    sheet.getRange(rowToUpdate, colCat).setValue(param.cat || "#N/A");         // Col AD: Cat
+    sheet.getRange(rowToUpdate, colPubStatus).setValue(1);                     // Col AU: Publish Status
+    sheet.getRange(rowToUpdate, colListStatus).setValue(1);                    // Col AV: Listing status
   } else {
-    sheet.getRange(rowToUpdate, 2).setValue(id || "");
-    sheet.getRange(rowToUpdate, 3).setValue(name || "");
+    // Update existing product
+    if (id) sheet.getRange(rowToUpdate, colId).setValue(id);
+    if (name) sheet.getRange(rowToUpdate, colTitle).setValue(name);
   }
 
+  // Prices
   var pNum = safeParsePrice(price);
-  if (!isNaN(pNum)) sheet.getRange(rowToUpdate, 15).setValue(pNum); // Col O: Price
+  if (!isNaN(pNum)) sheet.getRange(rowToUpdate, colPrice).setValue(pNum);      // Col O: Price
 
   var pA = safeParsePrice(priceA);
-  if (!isNaN(pA)) sheet.getRange(rowToUpdate, 18).setValue(pA); // Col R: A 價
-  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, 18).setValue(pNum);
+  if (!isNaN(pA)) sheet.getRange(rowToUpdate, colGold).setValue(pA);           // Col R: A 價
+  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, colGold).setValue(pNum);
 
   var pB = safeParsePrice(priceB);
-  if (!isNaN(pB)) sheet.getRange(rowToUpdate, 19).setValue(pB); // Col S: B 價
-  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, 19).setValue(pNum);
+  if (!isNaN(pB)) sheet.getRange(rowToUpdate, colSilver).setValue(pB);         // Col S: B 價
+  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, colSilver).setValue(pNum);
 
   var pC = safeParsePrice(priceC);
-  if (!isNaN(pC)) sheet.getRange(rowToUpdate, 20).setValue(pC); // Col T: C 價
-  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, 20).setValue(pNum);
+  if (!isNaN(pC)) sheet.getRange(rowToUpdate, colBasic).setValue(pC);          // Col T: C 價
+  else if (!isNaN(pNum)) sheet.getRange(rowToUpdate, colBasic).setValue(pNum);
 
+  // Stock
   var abVal = (quantity === "" || quantity === undefined) ? 1 : 0;
   var acVal = abVal === 1 ? "" : (quantity || "0");
+  sheet.getRange(rowToUpdate, colUnlimited).setValue(abVal);                   // Col AB: UnlimitedStock
+  sheet.getRange(rowToUpdate, colStock).setValue(acVal);                       // Col AC: Stock
 
-  sheet.getRange(rowToUpdate, 28).setValue(abVal); // Col AB: UnlimitedStock
-  sheet.getRange(rowToUpdate, 29).setValue(acVal); // Col AC: Stock / 庫存
-  sheet.getRange(rowToUpdate, 30).setValue(remarks || ""); // Col AD: Remarks
+  // Col AF: list (Header as 'list') MUST ALWAYS BE '0' so users can select the newly added product!
+  sheet.getRange(rowToUpdate, colList).setValue("0");
 
   SpreadsheetApp.flush();
   return {
     status: 'success',
-    message: 'Product synced successfully in row ' + rowToUpdate
+    message: 'Product synced successfully in row ' + rowToUpdate,
+    id: id || "",
+    name: name || "",
+    row: rowToUpdate
   };
 }
 

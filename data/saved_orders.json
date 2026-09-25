@@ -116,7 +116,8 @@
         "outerBoxUnit": "打"
       }
     ],
-    "isHeld": true
+    "isHeld": true,
+    "isKeyedIn": false
   },
   {
     "id": "1778988365764",
@@ -136,7 +137,8 @@
         "outerBoxUnit": "打"
       }
     ],
-    "isHeld": true
+    "isHeld": true,
+    "isKeyedIn": false
   },
   {
     "id": "1778943683445",
@@ -177,7 +179,8 @@
         "outerBoxUnit": "打"
       }
     ],
-    "isHeld": true
+    "isHeld": true,
+    "isKeyedIn": false
   },
   {
     "id": "ADMIN00004",
@@ -712,5 +715,168 @@
     "orderAmount": 1152,
     "isKeyedIn": true,
     "isHeld": false
+  },
+  {
+    "id": "EVA00052",
+    "customerName": "$信大藥房有限公司$TW",
+    "salesName": "EVA",
+    "date": "2026/09/25 11:24:25",
+    "remark": "",
+    "items": [
+      {
+        "id": "EVA00052-item-5",
+        "name": "(wc)金門牌 金門救心丹50粒",
+        "quantity": 12,
+        "price": 155,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 1860,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "YO00001",
+    "customerName": "大中華國產藥業西藥行",
+    "salesName": "YO",
+    "date": "2026/09/25 10:49:43",
+    "remark": "",
+    "items": [
+      {
+        "id": "YO00001-item-4",
+        "name": "(JP)小林製藥 - 坐廁清潔香氣除菌凝膠 28g [粉紅]",
+        "quantity": 12,
+        "price": 10,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 120,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "EVA00050",
+    "customerName": "$榮健藥坊$",
+    "salesName": "EVA",
+    "date": "2026/09/25 10:44:49",
+    "remark": "",
+    "items": [
+      {
+        "id": "EVA00050-item-3",
+        "name": "(JP) POLA 胶原蛋白口服液50ML*10支",
+        "quantity": 12,
+        "price": 230,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 2760,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KATIE00002",
+    "customerName": "$新興隆中西藥行$",
+    "salesName": "KATIE",
+    "date": "2026/09/25 10:44:31",
+    "remark": "",
+    "items": [
+      {
+        "id": "KATIE00002-item-2",
+        "name": "(wc)怡口 EQUAL CLASSIC 零卡路里代糖 健康糖包裝 100包",
+        "quantity": 12,
+        "price": 45,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      }
+    ],
+    "orderAmount": 540,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KATIE00001",
+    "customerName": "$健富西藥坊$",
+    "salesName": "KATIE",
+    "date": "2026-07-22T00:55:54.796Z",
+    "remark": "",
+    "items": [
+      {
+        "id": "1784681753138-qefh5kkbu",
+        "name": "‼️(WC)(PS4)COLESTOP® Tablets 10 mg 30粒 醇為降 EXP2026.10",
+        "quantity": 3,
+        "price": 80,
+        "isOuterBox": true,
+        "unitsPerBox": 12,
+        "outerBoxUnit": "打"
+      }
+    ],
+    "orderAmount": 240,
+    "isKeyedIn": true,
+    "isHeld": false
+  },
+  {
+    "id": "KATIE00003",
+    "customerName": "$愛春園藥行$",
+    "salesName": "KATIE",
+    "date": "2026/09/25 14:30:33",
+    "remark": "",
+    "items": [
+      {
+        "id": "KATIE00003-item-6",
+        "name": "木瓜萬用軟膏(大)    6/pack",
+        "quantity": 5,
+        "price": 62,
+        "isOuterBox": false,
+        "unitsPerBox": 6,
+        "outerBoxUnit": "pack"
+      },
+      {
+        "id": "KATIE00003-item-7",
+        "name": "水貨版 豆豉鯪魚184 gram (厚身箱) 24/箱",
+        "quantity": 48,
+        "price": 10,
+        "isOuterBox": true,
+        "unitsPerBox": 24,
+        "outerBoxUnit": "箱"
+      },
+      {
+        "id": "KATIE00003-item-8",
+        "name": "加拿大 Jamieson 增美神天然維他命B雜120粒 新版",
+        "quantity": 12,
+        "price": 75,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "KATIE00003-item-9",
+        "name": "加拿大 Jamieson 增美神10X超強生物素(10000mcg) 加量裝 90粒 新版",
+        "quantity": 12,
+        "price": 82,
+        "isOuterBox": false,
+        "unitsPerBox": 1,
+        "outerBoxUnit": "unit"
+      },
+      {
+        "id": "KATIE00003-item-10",
+        "name": "牙餅 (保麗淨) 72片裝    3/pack",
+        "quantity": 1,
+        "price": 66,
+        "isOuterBox": false,
+        "unitsPerBox": 3,
+        "outerBoxUnit": "pack"
+      }
+    ],
+    "orderAmount": 2740,
+    "isKeyedIn": false,
+    "isHeld": false,
+    "updatedAt": 1790320994376
   }
 ]

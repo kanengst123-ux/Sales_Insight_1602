@@ -793,7 +793,7 @@ export const addCustomerToSheet = async (name: string, user: string, district: s
   }
 };
 
-export const addProductToSheet = async (name: string, username: string): Promise<boolean> => {
+export const addProductToSheet = async (name: string, username: string): Promise<{ success: boolean; id?: string }> => {
   try {
     const d = new Date();
     const dd = String(d.getDate()).padStart(2, '0');
@@ -809,7 +809,8 @@ export const addProductToSheet = async (name: string, username: string): Promise
       action: 'addProduct',
       name,
       username,
-      id: generatedId
+      id: generatedId,
+      list: '0'
     };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
@@ -817,10 +818,10 @@ export const addProductToSheet = async (name: string, username: string): Promise
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return true;
+    return { success: true, id: generatedId };
   } catch (error) {
     console.error('Error adding product:', error);
-    return false;
+    return { success: false };
   }
 };
 
@@ -1253,10 +1254,12 @@ export const toggleHoldServerOrder = async (orderId: string): Promise<boolean> =
 /**
  * Mark order as keyed in on the server
  */
-export const keyInServerOrder = async (orderId: string): Promise<boolean> => {
+export const keyInServerOrder = async (orderId: string, isKeyedIn: boolean = true): Promise<boolean> => {
   try {
     const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/keyin`, {
-      method: 'PATCH'
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isKeyedIn })
     });
     return res.ok;
   } catch (e) {

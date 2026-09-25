@@ -17,7 +17,8 @@ import {
   ChevronUp, 
   Package, 
   CheckCircle2, 
-  Clock 
+  Clock,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -26,6 +27,7 @@ interface OrderListProps {
   onEditOrder: (order: SavedOrder) => void;
   onDeleteOrder: (orderId: string) => void;
   onToggleHold: (orderId: string) => void;
+  onToggleKeyIn?: (orderId: string) => void;
   currentRole: string | null;
   onNewOrder: () => void;
   onKeyInOrders?: () => Promise<boolean>;
@@ -40,6 +42,7 @@ const OrderList: React.FC<OrderListProps> = ({
   onEditOrder, 
   onDeleteOrder, 
   onToggleHold, 
+  onToggleKeyIn,
   currentRole, 
   onNewOrder, 
   onKeyInOrders, 
@@ -511,15 +514,31 @@ const OrderList: React.FC<OrderListProps> = ({
                                 </span>
                               )}
                               {order.isKeyedIn ? (
-                                <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleKeyIn?.(order.id);
+                                  }}
+                                  title="點擊切換為未入機"
+                                  className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 border border-emerald-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
+                                >
                                   <CheckCircle2 className="w-2.5 h-2.5" />
                                   已入機
-                                </span>
+                                </button>
                               ) : !order.isHeld && (
-                                <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-sky-500/15 text-sky-700 border border-sky-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleKeyIn?.(order.id);
+                                  }}
+                                  title="點擊切換為已入機"
+                                  className="px-1.5 py-0.5 rounded-md text-[9px] bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 border border-sky-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
+                                >
                                   <Clock className="w-2.5 h-2.5" />
                                   未入機
-                                </span>
+                                </button>
                               )}
                             </div>
 
@@ -530,6 +549,18 @@ const OrderList: React.FC<OrderListProps> = ({
                               </span>
 
                               <span className="text-slate-300">•</span>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditOrder(order);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+                              >
+                                <Pencil className="w-2.5 h-2.5" />
+                                <span>修改</span>
+                              </button>
 
                               <button
                                 type="button"

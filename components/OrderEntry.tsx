@@ -18,6 +18,7 @@ interface OrderEntryProps {
   preSelectedCustomer?: string | null;
   onClearPreSelectedCustomer?: () => void;
   onCustomerAdded?: (name: string) => void;
+  onProductAdded?: (product: Product) => void;
 }
 
 const OrderEntry: React.FC<OrderEntryProps> = ({ 
@@ -31,7 +32,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   savedOrders = [],
   preSelectedCustomer = null,
   onClearPreSelectedCustomer,
-  onCustomerAdded
+  onCustomerAdded,
+  onProductAdded
 }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     if (editingOrder?.salesName) return editingOrder.salesName;
@@ -456,14 +458,29 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     setIsSubmitting(true);
     try {
       const activeUser = selectedRole || 'Unknown';
-      const success = await addProductToSheet(newProductName.trim(), activeUser);
-      if (success) {
-        // Refresh product list
-        const productData = await fetchProducts();
-        setProducts(productData);
+      const trimmedName = newProductName.trim();
+      const res = await addProductToSheet(trimmedName, activeUser);
+      if (res && res.success) {
+        // Construct the newly added product with list: '0' so it is immediately searchable and selectable
+        const newProd: Product = {
+          id: res.id || `${activeUser}${Date.now()}`,
+          name: trimmedName,
+          price: 0,
+          prices: { A: 0, B: 0, C: 0 },
+          unlimitedStock: true,
+          list: '0'
+        };
+        setProducts(prev => {
+          const filtered = prev.filter(p => p.name.trim() !== trimmedName);
+          return [newProd, ...filtered];
+        });
+        onProductAdded?.(newProd);
+        setProductSearchQuery(trimmedName);
         setNewProductName('');
         setShowAddProductModal(false);
-        alert('產品已成功添加！');
+        alert('產品已成功添加！已在搜尋欄為您顯示該產品。');
+      } else {
+        alert('添加產品失敗，請重試。');
       }
     } catch (error) {
       console.error('Failed to add product:', error);

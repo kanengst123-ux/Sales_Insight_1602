@@ -59,36 +59,64 @@ const mergeOrderLists = (
       return;
     }
 
-    // Determine if this order is confirmed keyed-in:
-    // It's keyed in if present in Trade_log, recently submitted in this session, or marked keyed-in on server/local
-    const isConfirmedKeyedIn = validCloudIds.has(o.id) || recentlySubmitted.has(o.id) || o.isKeyedIn === true;
+    if (map.has(o.id)) {
+      const existing = map.get(o.id)!;
+      // If candidate o has a newer updatedAt timestamp, or if existing has no updatedAt:
+      const candidateIsNewer = Boolean(
+        o.updatedAt && (!existing.updatedAt || o.updatedAt >= existing.updatedAt)
+      );
 
-    // If this order is confirmed in Trade_log or Trade_log_admin:
-    if (validCloudIds.has(o.id)) {
-      const cloudOrder = map.get(o.id)!;
-      // If local/server has updated or more complete items (e.g. newly added goods), preserve them:
-      const preferredItems = (o.items && o.items.length >= (cloudOrder.items?.length || 0))
+      // Preferred items: if candidate is newer or has more complete items, take candidate items
+      const preferredItems = (candidateIsNewer && o.items && o.items.length > 0)
         ? o.items
-        : (cloudOrder.items || o.items || []);
+        : ((o.items && o.items.length >= (existing.items?.length || 0)) ? o.items : (existing.items || []));
+
+      const preferredAmount = candidateIsNewer && o.orderAmount !== undefined
+        ? o.orderAmount
+        : (existing.orderAmount !== undefined ? existing.orderAmount : o.orderAmount);
+
+      const preferredRemark = candidateIsNewer && o.remark !== undefined
+        ? o.remark
+        : (o.remark || existing.remark);
+
+      // Determine keyed in status:
+      // 1. If explicitly submitted in current session: ALWAYS true!
+      // 2. If candidate has isKeyedIn === false and wasn't submitted in this session: FALSE!
+      // 3. If candidate is newer and specifies isKeyedIn: use candidate's isKeyedIn
+      // 4. Otherwise keep existing status (from cloud or previous candidate)
+      let isKeyedIn = existing.isKeyedIn;
+      if (recentlySubmitted.has(o.id)) {
+        isKeyedIn = true;
+      } else if (o.isKeyedIn === false) {
+        isKeyedIn = false;
+      } else if (candidateIsNewer && o.isKeyedIn !== undefined) {
+        isKeyedIn = o.isKeyedIn;
+      }
 
       map.set(o.id, {
-        ...cloudOrder,
+        ...existing,
         ...o,
         items: preferredItems,
-        orderAmount: o.orderAmount !== undefined ? o.orderAmount : cloudOrder.orderAmount,
-        remark: o.remark !== undefined ? o.remark : cloudOrder.remark,
-        isHeld: o.isHeld ?? cloudOrder.isHeld,
-        // If confirmed keyed-in, keep it as keyed-in; never accidentally revert to unkeyed!
-        isKeyedIn: isConfirmedKeyedIn ? true : (o.isKeyedIn ?? true)
+        orderAmount: preferredAmount,
+        remark: preferredRemark,
+        isHeld: candidateIsNewer ? (o.isHeld ?? existing.isHeld) : (existing.isHeld ?? o.isHeld),
+        isKeyedIn,
+        updatedAt: Math.max(existing.updatedAt || 0, o.updatedAt || 0)
       });
       return;
     }
 
-    // If NOT in Trade_log / Trade_log_admin:
-    // Keep it if it's confirmed keyed in, pending draft, held, or recently submitted
+    // If NOT in Trade_log / Trade_log_admin yet:
+    let isKeyedIn = o.isKeyedIn ?? false;
+    if (recentlySubmitted.has(o.id)) {
+      isKeyedIn = true;
+    } else if (o.isKeyedIn === false) {
+      isKeyedIn = false;
+    }
+
     map.set(o.id, {
       ...o,
-      isKeyedIn: isConfirmedKeyedIn ? true : (o.isKeyedIn ?? false)
+      isKeyedIn
     });
   };
 
@@ -160,23 +188,30 @@ const App: React.FC = () => {
     activeSavedOrderIdsRef.current.add(order.id);
     recentlySubmittedOrderIds.delete(order.id);
 
+    // Any saved or edited order becomes unkeyed pending new submission to Trade_log
+    const orderToSave: SavedOrder = {
+      ...order,
+      isKeyedIn: false,
+      updatedAt: Date.now()
+    };
+
     // 2. Remove order.id from deletedOrderIds state and localStorage if present
     setDeletedOrderIds(prev => {
       const next = new Set(prev);
-      next.delete(order.id);
+      next.delete(orderToSave.id);
       localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(next)));
       return next;
     });
 
     // 3. Immediately persist into savedOrders and localStorage
     setSavedOrders(prev => {
-      const idx = prev.findIndex(o => o.id === order.id);
+      const idx = prev.findIndex(o => o.id === orderToSave.id);
       let next: SavedOrder[];
       if (idx !== -1) {
         next = [...prev];
-        next[idx] = order;
+        next[idx] = orderToSave;
       } else {
-        next = [order, ...prev];
+        next = [orderToSave, ...prev];
       }
       localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
       return next;
@@ -186,15 +221,61 @@ const App: React.FC = () => {
     setActiveTab('saved_orders');
 
     try {
-      await saveServerOrder(order);
+      await keyInServerOrder(orderToSave.id, false);
+      await saveServerOrder(orderToSave);
     } catch (e) {
       console.warn("Failed to sync new order to server:", e);
     }
   };
 
   const handleEditOrder = (order: SavedOrder) => {
-    setEditingOrder(order);
+    // When editing an already keyed-in order:
+    // Mark it as unkeyed immediately so the order list and server recognize it as unkeyed/being edited!
+    recentlySubmittedOrderIds.delete(order.id);
+    const unkeyedOrder: SavedOrder = {
+      ...order,
+      isKeyedIn: false,
+      updatedAt: Date.now()
+    };
+    setSavedOrders(prev => {
+      const next = prev.map(o => o.id === order.id ? unkeyedOrder : o);
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
+    });
+    keyInServerOrder(order.id, false).catch(() => {});
+    saveServerOrder(unkeyedOrder).catch(() => {});
+
+    setEditingOrder(unkeyedOrder);
     setActiveTab('order');
+  };
+
+  const handleToggleKeyIn = async (orderId: string) => {
+    let newStatus = false;
+    let targetOrder: SavedOrder | undefined;
+
+    setSavedOrders(prev => {
+      const next = prev.map(o => {
+        if (o.id === orderId) {
+          newStatus = !o.isKeyedIn;
+          targetOrder = { ...o, isKeyedIn: newStatus, updatedAt: Date.now() };
+          return targetOrder;
+        }
+        return o;
+      });
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
+    });
+
+    if (newStatus) {
+      recentlySubmittedOrderIds.add(orderId);
+    } else {
+      recentlySubmittedOrderIds.delete(orderId);
+    }
+
+    if (targetOrder) {
+      keyInServerOrder(orderId, newStatus).catch(() => {});
+      saveServerOrder(targetOrder).catch(() => {});
+    }
   };
 
   const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
@@ -720,6 +801,7 @@ const App: React.FC = () => {
   if (activeTab === 'order') {
     return (
       <OrderEntry 
+        key={editingOrder ? `edit-${editingOrder.id}` : 'new-order'}
         onBack={() => { setActiveTab('dashboard'); setEditingOrder(null); }} 
         onSaveOrder={handleSaveOrder} 
         onShowOrderList={() => { setActiveTab('saved_orders'); setEditingOrder(null); }}
@@ -731,6 +813,7 @@ const App: React.FC = () => {
         preSelectedCustomer={preSelectedCustomer}
         onClearPreSelectedCustomer={() => setPreSelectedCustomer(null)}
         onCustomerAdded={handleCustomerAdded}
+        onProductAdded={(newProd) => setProducts(prev => [newProd, ...prev.filter(p => p.name !== newProd.name)])}
       />
     );
   }
@@ -887,6 +970,7 @@ const App: React.FC = () => {
               onEditOrder={handleEditOrder} 
               onDeleteOrder={handleDeleteOrder}
               onToggleHold={handleToggleHold}
+              onToggleKeyIn={handleToggleKeyIn}
               currentRole={localStorage.getItem('ws_selected_role')}
               onNewOrder={() => { setEditingOrder(null); setActiveTab('order'); }}
               onKeyInOrders={handleKeyInOrders}

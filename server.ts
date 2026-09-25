@@ -742,21 +742,22 @@ async function startServer() {
     }
   });
 
-  // Mark order as keyed in
+  // Mark order as keyed in or unkeyed
   app.patch("/api/orders/:id/keyin", (req, res) => {
     const orderId = req.params.id;
+    const isKeyedIn = req.body && req.body.isKeyedIn !== undefined ? Boolean(req.body.isKeyedIn) : true;
     const orders = getSavedOrders();
     const order = orders.find((o: any) => o.id === orderId);
     if (order) {
-      order.isKeyedIn = true;
-      order.isHeld = false;
+      order.isKeyedIn = isKeyedIn;
+      if (isKeyedIn) order.isHeld = false;
       order.updatedAt = Date.now();
     } else {
-      orders.unshift({ id: orderId, isKeyedIn: true, isHeld: false, updatedAt: Date.now() });
+      orders.unshift({ id: orderId, isKeyedIn, isHeld: false, updatedAt: Date.now() });
     }
     saveOrdersToFile(orders);
     lastTradeFetchTime = 0; // Force immediate refresh of trade orders from Google Sheets
-    res.json({ success: true });
+    res.json({ success: true, isKeyedIn });
   });
 
   // Batch mark orders as keyed in
