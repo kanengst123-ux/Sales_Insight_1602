@@ -18,7 +18,7 @@ import {
   purgeDeletedOrdersFromCache
 } from './services/dataService';
 import { getCachedItem } from './services/cacheService';
-import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product } from './types';
+import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product, APP_USERS, isOrderOwner } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
 import CollectionsTable from './components/CollectionsTable';
@@ -26,7 +26,7 @@ import InactiveCustomers from './components/InactiveCustomers';
 import CustomerGrades from './components/CustomerGrades';
 import OrderEntry from './components/OrderEntry';
 import OrderList from './components/OrderList';
-import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered } from 'lucide-react';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered, UserCircle } from 'lucide-react';
 
 // Track order IDs submitted in this current session so they stay marked until next sheet sync
 const recentlySubmittedOrderIds = new Set<string>();
@@ -175,6 +175,12 @@ const App: React.FC = () => {
   });
   const [preSelectedCustomer, setPreSelectedCustomer] = useState<string | null>(null);
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState<boolean>(false);
+  const [currentRole, setCurrentRole] = useState<string | null>(() => localStorage.getItem('ws_selected_role') || 'Admin');
+
+  const handleSelectRole = (role: string) => {
+    setCurrentRole(role);
+    localStorage.setItem('ws_selected_role', role);
+  };
 
   useEffect(() => {
     localStorage.setItem('榮昇_saved_orders', JSON.stringify(savedOrders));
@@ -184,6 +190,13 @@ const App: React.FC = () => {
   const deletingOrderIdsRef = useRef<Set<string>>(new Set());
 
   const handleSaveOrder = async (order: SavedOrder) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    const existingOrder = savedOrders.find(o => o.id === order.id);
+    if (existingOrder && !isOrderOwner(existingOrder, activeRole)) {
+      alert(`您只能修改屬於自己的訂單！\n此訂單業務為：${existingOrder.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
+      return;
+    }
+
     // 1. Mark this order as actively created/saved so sync will never discard it
     activeSavedOrderIdsRef.current.add(order.id);
     recentlySubmittedOrderIds.delete(order.id);
@@ -229,6 +242,12 @@ const App: React.FC = () => {
   };
 
   const handleEditOrder = (order: SavedOrder) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    if (!isOrderOwner(order, activeRole)) {
+      alert(`您只能修改屬於自己的訂單！\n此訂單業務為：${order.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
+      return;
+    }
+
     // When editing an already keyed-in order:
     // Mark it as unkeyed immediately so the order list and server recognize it as unkeyed/being edited!
     recentlySubmittedOrderIds.delete(order.id);
@@ -250,6 +269,13 @@ const App: React.FC = () => {
   };
 
   const handleToggleKeyIn = async (orderId: string) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    const existingOrder = savedOrders.find(o => o.id === orderId);
+    if (existingOrder && !isOrderOwner(existingOrder, activeRole)) {
+      alert(`您只能為屬於自己的訂單入機！\n此訂單業務為：${existingOrder.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
+      return;
+    }
+
     let newStatus = false;
     let targetOrder: SavedOrder | undefined;
 
@@ -322,6 +348,14 @@ const App: React.FC = () => {
 
   const handleDeleteOrder = async (orderId: string) => {
     if (deletingOrderIdsRef.current.has(orderId)) return;
+
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    const orderToDelete = savedOrders.find(o => o.id === orderId);
+    if (orderToDelete && !isOrderOwner(orderToDelete, activeRole)) {
+      alert(`您只能刪除屬於自己的訂單！\n此訂單業務為：${orderToDelete.salesName || '未知'}`);
+      return;
+    }
+
     deletingOrderIdsRef.current.add(orderId);
     activeSavedOrderIdsRef.current.delete(orderId);
 
@@ -331,7 +365,6 @@ const App: React.FC = () => {
     localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
 
     // 2. Remove immediately from local state and localStorage
-    const orderToDelete = savedOrders.find(o => o.id === orderId);
     setSavedOrders(prev => {
       const next = prev.filter(o => o.id !== orderId);
       localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
@@ -366,8 +399,13 @@ const App: React.FC = () => {
   };
 
   const handleToggleHold = async (orderId: string) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
     const order = savedOrders.find(o => o.id === orderId);
     if (!order) return;
+    if (!isOrderOwner(order, activeRole)) {
+      alert(`您只能暫存或取消暫存屬於自己的訂單！\n此訂單業務為：${order.salesName || '未知'}`);
+      return;
+    }
 
     const newIsHeld = !order.isHeld;
 
@@ -427,14 +465,21 @@ const App: React.FC = () => {
   };
 
   const handleKeyInOrders = async (): Promise<boolean> => {
-    const activeRole = localStorage.getItem('ws_selected_role');
-    if (!activeRole) return false;
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    if (!activeRole) {
+      alert("請先選擇登入身份！");
+      return false;
+    }
 
+    // Each user (admin, eva, katie, kasey, yo) can only key in their OWN orders
     const ordersToKeyIn = savedOrders.filter(
-      o => (activeRole === 'Admin' || o.salesName === activeRole) && !o.isHeld && !o.isKeyedIn
+      o => isOrderOwner(o, activeRole) && !o.isHeld && !o.isKeyedIn
     );
 
-    if (ordersToKeyIn.length === 0) return false;
+    if (ordersToKeyIn.length === 0) {
+      alert(`沒有屬於 ${activeRole} 的待入機訂單。`);
+      return false;
+    }
 
     setIsKeyingIn(true);
     try {
@@ -801,7 +846,7 @@ const App: React.FC = () => {
   if (activeTab === 'order') {
     return (
       <OrderEntry 
-        key={editingOrder ? `edit-${editingOrder.id}` : 'new-order'}
+        key={editingOrder ? `edit-${editingOrder.id}` : `new-order-${currentRole || 'none'}`}
         onBack={() => { setActiveTab('dashboard'); setEditingOrder(null); }} 
         onSaveOrder={handleSaveOrder} 
         onShowOrderList={() => { setActiveTab('saved_orders'); setEditingOrder(null); }}
@@ -814,6 +859,8 @@ const App: React.FC = () => {
         onClearPreSelectedCustomer={() => setPreSelectedCustomer(null)}
         onCustomerAdded={handleCustomerAdded}
         onProductAdded={(newProd) => setProducts(prev => [newProd, ...prev.filter(p => p.name !== newProd.name)])}
+        currentRole={currentRole}
+        onSelectRole={handleSelectRole}
       />
     );
   }
@@ -827,9 +874,21 @@ const App: React.FC = () => {
           </div>
           <span className="font-bold text-sm tracking-tight">榮昇銷售數據</span>
         </div>
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1 hover:bg-slate-800 rounded-md transition-colors">
-          {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={currentRole || ''}
+            onChange={(e) => handleSelectRole(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 focus:outline-none"
+            title="切換登入身份"
+          >
+            {APP_USERS.map(u => (
+              <option key={u} value={u}>{u}</option>
+            ))}
+          </select>
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1 hover:bg-slate-800 rounded-md transition-colors">
+            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
       </header>
 
       {isSidebarOpen && (
@@ -844,11 +903,30 @@ const App: React.FC = () => {
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         md:translate-x-0 md:w-64
       `}>
-        <div className="hidden md:flex items-center gap-2.5 mb-6">
+        <div className="hidden md:flex items-center gap-2.5 mb-5">
           <div className="p-1.5 bg-blue-600 rounded-md shadow-md shadow-blue-600/20">
             <BarChart3 className="w-5 h-5" />
           </div>
           <h1 className="text-base font-bold tracking-tight">榮昇銷售數據</h1>
+        </div>
+
+        {/* Global User Role Indicator & Switcher */}
+        <div className="mb-4 px-3 py-2 bg-slate-800/80 rounded-xl border border-slate-700/60">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <UserCircle className="w-3.5 h-3.5 text-blue-400" />
+              登入身份 (User)
+            </span>
+          </div>
+          <select
+            value={currentRole || ''}
+            onChange={(e) => handleSelectRole(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+          >
+            {APP_USERS.map(u => (
+              <option key={u} value={u}>{u}</option>
+            ))}
+          </select>
         </div>
 
         <nav className="flex-1 space-y-2">
@@ -971,7 +1049,8 @@ const App: React.FC = () => {
               onDeleteOrder={handleDeleteOrder}
               onToggleHold={handleToggleHold}
               onToggleKeyIn={handleToggleKeyIn}
-              currentRole={localStorage.getItem('ws_selected_role')}
+              currentRole={currentRole}
+              onSelectRole={handleSelectRole}
               onNewOrder={() => { setEditingOrder(null); setActiveTab('order'); }}
               onKeyInOrders={handleKeyInOrders}
               isKeyingIn={isKeyingIn}

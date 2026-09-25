@@ -102,3 +102,28 @@ export interface SavedOrder {
   isKeyedIn?: boolean;
   updatedAt?: number;
 }
+
+export const APP_USERS = ['Admin', 'EVA', 'KATIE', 'KASEY', 'YO'] as const;
+export type AppUser = typeof APP_USERS[number];
+
+/**
+ * Checks if the given order belongs to the specified active role / user.
+ * Users: admin, eva, katie, kasey, yo
+ */
+export const isOrderOwner = (order: SavedOrder | null | undefined, currentRole: string | null | undefined): boolean => {
+  if (!order || !currentRole) return false;
+  const roleNorm = currentRole.trim().toUpperCase();
+  if (!roleNorm) return false;
+
+  const salesNorm = (order.salesName || '').trim().toUpperCase();
+  if (salesNorm === roleNorm) return true;
+  if (salesNorm.startsWith(roleNorm) || salesNorm.includes(roleNorm)) {
+    return true;
+  }
+
+  // Fallback: Check if order.id starts with the role name (e.g. EVA00001, KATIE00002, ADMIN00003, KASEY00004, YO00005)
+  const idNorm = (order.id || '').trim().toUpperCase();
+  if (idNorm.startsWith(roleNorm)) return true;
+
+  return false;
+};

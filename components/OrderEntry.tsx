@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts, addCustomerToSheet, addProductToSheet } from '../services/dataService';
-import { Product, OrderItem, Customer, SavedOrder } from '../types';
+import { Product, OrderItem, Customer, SavedOrder, isOrderOwner } from '../types';
 import { ProductThumbnail } from './ProductThumbnail';
 
 interface OrderEntryProps {
@@ -19,6 +19,8 @@ interface OrderEntryProps {
   onClearPreSelectedCustomer?: () => void;
   onCustomerAdded?: (name: string) => void;
   onProductAdded?: (product: Product) => void;
+  currentRole?: string | null;
+  onSelectRole?: (role: string) => void;
 }
 
 const OrderEntry: React.FC<OrderEntryProps> = ({ 
@@ -33,12 +35,30 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   preSelectedCustomer = null,
   onClearPreSelectedCustomer,
   onCustomerAdded,
-  onProductAdded
+  onProductAdded,
+  currentRole,
+  onSelectRole
 }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
-    if (editingOrder?.salesName) return editingOrder.salesName;
-    return localStorage.getItem('ws_selected_role');
+    return currentRole || localStorage.getItem('ws_selected_role');
   });
+
+  useEffect(() => {
+    if (currentRole) {
+      setSelectedRole(currentRole);
+    }
+  }, [currentRole]);
+
+  // Guard: Each user can only edit their own orders
+  useEffect(() => {
+    if (editingOrder) {
+      const active = selectedRole || currentRole || localStorage.getItem('ws_selected_role');
+      if (active && !isOrderOwner(editingOrder, active)) {
+        alert(`權限提示：您只能修改屬於自己的訂單！\n此訂單業務為：${editingOrder.salesName || '未知'}，您目前的身份為：${active}`);
+        onBack();
+      }
+    }
+  }, [editingOrder, selectedRole, currentRole, onBack]);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || preSelectedCustomer || null);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers || []);
@@ -172,12 +192,13 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
   }, [favorites, selectedRole]);
 
-  // Save selected role to localStorage
+  // Save selected role to localStorage and notify parent
   useEffect(() => {
     if (selectedRole) {
       localStorage.setItem('ws_selected_role', selectedRole);
+      onSelectRole?.(selectedRole);
     }
-  }, [selectedRole]);
+  }, [selectedRole, onSelectRole]);
 
   // Reset district search when role changes
   useEffect(() => {
@@ -404,7 +425,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
 
     const totalAmount = selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
-    const activeUserName = selectedRole || 'Unknown';
+    const activeUserName = selectedRole || currentRole || localStorage.getItem('ws_selected_role') || 'Unknown';
+    
+    // Guard: Each user can only edit their own orders
+    if (editingOrder && !isOrderOwner(editingOrder, activeUserName)) {
+      alert(`權限提示：您只能修改屬於自己的訂單！\n此訂單業務為：${editingOrder.salesName || '未知'}，您目前的身份為：${activeUserName}`);
+      return;
+    }
+
     const computedId = editingOrder?.id || onGenerateOrderId?.(activeUserName) || `${Date.now()}`;
     
     const order: SavedOrder = {
@@ -412,7 +440,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       date: editingOrder?.date || new Date().toISOString(),
       customerName: selectedCustomer,
       orderAmount: totalAmount,
-      salesName: activeUserName,
+      salesName: editingOrder?.salesName || activeUserName,
       remark: remark,
       items: selectedItems,
       isKeyedIn: false,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { SavedOrder } from '../types';
+import { SavedOrder, APP_USERS, isOrderOwner } from '../types';
 import { 
   Calendar, 
   User, 
@@ -29,6 +29,7 @@ interface OrderListProps {
   onToggleHold: (orderId: string) => void;
   onToggleKeyIn?: (orderId: string) => void;
   currentRole: string | null;
+  onSelectRole?: (role: string) => void;
   onNewOrder: () => void;
   onKeyInOrders?: () => Promise<boolean>;
   isKeyingIn?: boolean;
@@ -44,6 +45,7 @@ const OrderList: React.FC<OrderListProps> = ({
   onToggleHold, 
   onToggleKeyIn,
   currentRole, 
+  onSelectRole,
   onNewOrder, 
   onKeyInOrders, 
   isKeyingIn = false,
@@ -59,7 +61,10 @@ const OrderList: React.FC<OrderListProps> = ({
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  const [showAll, setShowAll] = useState(currentRole === 'Admin' || !currentRole);
+  const [showAll, setShowAll] = useState(false);
+
+  // Checks whether the current user is the owner of an order
+  const isOwner = (order: SavedOrder) => isOrderOwner(order, currentRole);
 
   // Extract unique sales names from orders
   const uniqueSalesReps = useMemo(() => {
@@ -69,6 +74,7 @@ const OrderList: React.FC<OrderListProps> = ({
         set.add(o.salesName.trim());
       }
     });
+    APP_USERS.forEach(u => set.add(u));
     return Array.from(set).sort();
   }, [orders]);
 
@@ -88,13 +94,12 @@ const OrderList: React.FC<OrderListProps> = ({
     }
   };
 
-  // Base role-filtered orders
+  // Base role-filtered orders: only show current role unless showAll is toggled
   const roleFilteredOrders = useMemo(() => {
-    if (!currentRole || currentRole.trim().toUpperCase() === 'ADMIN' || showAll) {
-      return orders;
+    if (!showAll && currentRole) {
+      return orders.filter(o => isOwner(o));
     }
-    const targetRole = currentRole.trim().toUpperCase();
-    return orders.filter(o => (o.salesName || '').trim().toUpperCase() === targetRole);
+    return orders;
   }, [orders, currentRole, showAll]);
 
   // Counts for tabs
@@ -148,7 +153,7 @@ const OrderList: React.FC<OrderListProps> = ({
   }, [filteredOrders, currentPage]);
 
   const keyInCount = orders.filter(
-    o => (!currentRole || currentRole.trim().toUpperCase() === 'ADMIN' || (o.salesName || '').trim().toUpperCase() === currentRole.trim().toUpperCase()) && !o.isHeld && !o.isKeyedIn
+    o => isOwner(o) && !o.isHeld && !o.isKeyedIn
   ).length;
 
   const formatDate = (dateStr: string) => {
@@ -162,8 +167,8 @@ const OrderList: React.FC<OrderListProps> = ({
     }
   };
 
-  const toggleExpand = (orderId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleExpand = (orderId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setExpandedOrderId(prev => prev === orderId ? null : orderId);
   };
 
@@ -178,11 +183,27 @@ const OrderList: React.FC<OrderListProps> = ({
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="text-sm sm:text-base font-black text-slate-800 tracking-tight">
-                {currentRole === 'Admin' ? '所有用戶的訂單中心 (Admin 全覽)' : (showAll ? '全部用戶的訂單記錄' : `${currentRole} 的個人訂單`)}
+                {showAll ? '全部用戶的訂單記錄' : `${currentRole || '未登入'} 的個人訂單`}
               </h3>
             </div>
 
-            {currentRole && currentRole !== 'Admin' && (
+            {/* Role Switcher */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-bold shadow-inner">
+              <UserCircle className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-[10px] font-bold text-slate-500 uppercase">當前身份:</span>
+              <select
+                value={currentRole || ''}
+                onChange={(e) => onSelectRole?.(e.target.value)}
+                className="bg-white border border-slate-200 rounded-md px-2 py-0.5 text-xs font-black text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="" disabled>請選擇身份...</option>
+                {APP_USERS.map(u => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {currentRole && (
               <div className="inline-flex p-0.5 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-bold shadow-inner">
                 <button
                   type="button"
@@ -194,7 +215,7 @@ const OrderList: React.FC<OrderListProps> = ({
                   }`}
                 >
                   <User className="w-3 h-3" />
-                  只看自己
+                  只看自己 ({currentRole})
                 </button>
                 <button
                   type="button"
@@ -240,14 +261,21 @@ const OrderList: React.FC<OrderListProps> = ({
 
             {onKeyInOrders && (
               <button
-                disabled={isKeyingIn || keyInCount === 0}
+                disabled={isKeyingIn || keyInCount === 0 || !currentRole}
+                title={
+                  !currentRole 
+                    ? "請先選擇身份後再入機" 
+                    : keyInCount === 0 
+                      ? `沒有屬於 ${currentRole} 的待入機訂單` 
+                      : `為 ${currentRole} 的 ${keyInCount} 筆待入機訂單入機`
+                }
                 onClick={async (e) => {
                   e.stopPropagation();
                   setStatusMessage(null);
                   const success = await onKeyInOrders();
                   if (success) {
                     setStatusMessage({
-                      text: "🎉 入機成功！數量已在 Google 表格中記錄並扣減庫存。",
+                      text: `🎉 入機成功！已為 ${currentRole} 記錄並在 Google 表格中扣減庫存。`,
                       type: 'success'
                     });
                     setTimeout(() => setStatusMessage(null), 8000);
@@ -260,7 +288,7 @@ const OrderList: React.FC<OrderListProps> = ({
                   }
                 }}
                 className={`px-4 py-1.5 rounded-xl font-bold text-xs select-none shadow-sm transition-all focus:outline-none flex items-center gap-1.5
-                  ${keyInCount === 0 
+                  ${keyInCount === 0 || !currentRole
                     ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed' 
                     : isKeyingIn 
                       ? 'bg-blue-100 text-blue-500 cursor-wait'
@@ -464,11 +492,20 @@ const OrderList: React.FC<OrderListProps> = ({
               ) : (
                 paginatedOrders.map((order) => {
                   const isExpanded = expandedOrderId === order.id;
+                  const orderOwner = isOwner(order);
                   return (
                     <React.Fragment key={order.id}>
                       <tr 
-                        onClick={() => onEditOrder(order)}
-                        className={`transition-colors group cursor-pointer ${
+                        onClick={(e) => {
+                          if (orderOwner) {
+                            onEditOrder(order);
+                          } else {
+                            toggleExpand(order.id, e);
+                          }
+                        }}
+                        className={`transition-colors group ${
+                          orderOwner ? 'cursor-pointer' : 'cursor-default'
+                        } ${
                           order.isHeld 
                             ? 'bg-amber-50/60 hover:bg-amber-100/60' 
                             : isExpanded 
@@ -514,31 +551,45 @@ const OrderList: React.FC<OrderListProps> = ({
                                 </span>
                               )}
                               {order.isKeyedIn ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleKeyIn?.(order.id);
-                                  }}
-                                  title="點擊切換為未入機"
-                                  className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 border border-emerald-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <CheckCircle2 className="w-2.5 h-2.5" />
-                                  已入機
-                                </button>
+                                orderOwner && onToggleKeyIn ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleKeyIn(order.id);
+                                    }}
+                                    title="點擊切換為未入機"
+                                    className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 border border-emerald-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
+                                  >
+                                    <CheckCircle2 className="w-2.5 h-2.5" />
+                                    已入機
+                                  </button>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 select-none">
+                                    <CheckCircle2 className="w-2.5 h-2.5" />
+                                    已入機
+                                  </span>
+                                )
                               ) : !order.isHeld && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleKeyIn?.(order.id);
-                                  }}
-                                  title="點擊切換為已入機"
-                                  className="px-1.5 py-0.5 rounded-md text-[9px] bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 border border-sky-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <Clock className="w-2.5 h-2.5" />
-                                  未入機
-                                </button>
+                                orderOwner && onToggleKeyIn ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleKeyIn(order.id);
+                                    }}
+                                    title="點擊切換為已入機"
+                                    className="px-1.5 py-0.5 rounded-md text-[9px] bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 border border-sky-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 transition-colors cursor-pointer"
+                                  >
+                                    <Clock className="w-2.5 h-2.5" />
+                                    未入機
+                                  </button>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-sky-500/15 text-sky-700 border border-sky-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none flex items-center gap-1 select-none">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    未入機
+                                  </span>
+                                )
                               )}
                             </div>
 
@@ -550,45 +601,53 @@ const OrderList: React.FC<OrderListProps> = ({
 
                               <span className="text-slate-300">•</span>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditOrder(order);
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700"
-                              >
-                                <Pencil className="w-2.5 h-2.5" />
-                                <span>修改</span>
-                              </button>
+                              {orderOwner ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onEditOrder(order);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                    <span>修改</span>
+                                  </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggleHold(order.id);
-                                }}
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 border ${
-                                  order.isHeld
-                                    ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
-                                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-800'
-                                }`}
-                              >
-                                <Anchor className="w-2.5 h-2.5" />
-                                <span>{order.isHeld ? '取消暫存' : '暫存'}</span>
-                              </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleHold(order.id);
+                                    }}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 border ${
+                                      order.isHeld
+                                        ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    <Anchor className="w-2.5 h-2.5" />
+                                    <span>{order.isHeld ? '取消暫存' : '暫存'}</span>
+                                  </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOrderToDelete(order);
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:text-rose-700"
-                              >
-                                <Trash2 className="w-2.5 h-2.5" />
-                                <span>刪除</span>
-                              </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOrderToDelete(order);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all active:scale-95 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:text-rose-700"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                    <span>刪除</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium italic">
+                                  僅限 {order.salesName || '負責人'} 修改及入機
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -616,8 +675,16 @@ const OrderList: React.FC<OrderListProps> = ({
                       {/* Remark line */}
                       {order.remark && !isExpanded && (
                         <tr 
-                          onClick={() => onEditOrder(order)}
-                          className="border-t-0 bg-slate-50/30 hover:bg-blue-50/40 cursor-pointer transition-colors"
+                          onClick={(e) => {
+                            if (orderOwner) {
+                              onEditOrder(order);
+                            } else {
+                              toggleExpand(order.id, e);
+                            }
+                          }}
+                          className={`border-t-0 bg-slate-50/30 ${
+                            orderOwner ? 'hover:bg-blue-50/40 cursor-pointer' : 'cursor-default'
+                          } transition-colors`}
                         >
                           <td />
                           <td colSpan={3} className="px-3 py-1.5 pb-3">
@@ -640,13 +707,19 @@ const OrderList: React.FC<OrderListProps> = ({
                                   <Package className="w-3.5 h-3.5 text-blue-500" />
                                   訂單包含貨品清單 ({order.items?.length || 0})
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => onEditOrder(order)}
-                                  className="text-blue-600 hover:underline text-[10px] font-bold"
-                                >
-                                  編輯此訂單 &rarr;
-                                </button>
+                                {orderOwner ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditOrder(order)}
+                                    className="text-blue-600 hover:underline text-[10px] font-bold"
+                                  >
+                                    編輯此訂單 &rarr;
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">
+                                    僅限 {order.salesName || '負責人'} 編輯
+                                  </span>
+                                )}
                               </div>
 
                               <div className="divide-y divide-slate-50">
