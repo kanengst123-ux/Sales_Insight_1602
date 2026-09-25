@@ -629,12 +629,6 @@ async function startServer() {
 
   // Get orders directly from Trade_log and Trade_log_admin tabs of Product_list
   app.get("/api/trade-orders", async (req, res) => {
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    if (req.query.force === "true") {
-      lastTradeFetchTime = 0;
-    }
     try {
       const orders = await fetchTradeLogOrdersFromServer();
       const deletedOrderIds = getDeletedOrderIds();
@@ -649,9 +643,6 @@ async function startServer() {
 
   // Get all shared saved/pending orders across devices with deleted order IDs
   app.get("/api/orders", async (req, res) => {
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
     try {
       const deletedOrderIds = getDeletedOrderIds();
       const deletedSet = new Set(deletedOrderIds);
@@ -758,11 +749,40 @@ async function startServer() {
     const order = orders.find((o: any) => o.id === orderId);
     if (order) {
       order.isKeyedIn = true;
-      saveOrdersToFile(orders);
-      res.json({ success: true, order });
+      order.isHeld = false;
+      order.updatedAt = Date.now();
     } else {
-      res.status(404).json({ error: "Order not found" });
+      orders.unshift({ id: orderId, isKeyedIn: true, isHeld: false, updatedAt: Date.now() });
     }
+    saveOrdersToFile(orders);
+    lastTradeFetchTime = 0; // Force immediate refresh of trade orders from Google Sheets
+    res.json({ success: true });
+  });
+
+  // Batch mark orders as keyed in
+  app.post("/api/orders/keyin-batch", (req, res) => {
+    const orderIds: string[] = req.body.orderIds || [];
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.json({ success: true, count: 0 });
+      return;
+    }
+    const idSet = new Set(orderIds);
+    const orders = getSavedOrders();
+    orders.forEach((o: any) => {
+      if (idSet.has(o.id)) {
+        o.isKeyedIn = true;
+        o.isHeld = false;
+        o.updatedAt = Date.now();
+        idSet.delete(o.id);
+      }
+    });
+    // Add any remaining order IDs that weren't in saved_orders.json
+    idSet.forEach(id => {
+      orders.unshift({ id, isKeyedIn: true, isHeld: false, updatedAt: Date.now() });
+    });
+    saveOrdersToFile(orders);
+    lastTradeFetchTime = 0; // Force immediate refresh of trade orders from Google Sheets
+    res.json({ success: true, count: orderIds.length });
   });
 
   // Vite middleware for development

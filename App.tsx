@@ -14,6 +14,7 @@ import {
   deleteServerOrder,
   toggleHoldServerOrder,
   keyInServerOrder,
+  keyInServerOrdersBatch,
   purgeDeletedOrdersFromCache
 } from './services/dataService';
 import { getCachedItem } from './services/cacheService';
@@ -52,44 +53,43 @@ const mergeOrderLists = (
   // Helper to merge or filter candidates from server or local
   const mergeCandidate = (o: SavedOrder) => {
     if (!o || !o.id || deletedIds.has(o.id)) return;
-    
+
+    // Filter out obsolete raw Log invoice IDs
+    if (o.id.startsWith('W_') || /^\d{8}_\d+$/.test(o.id) || /^\d{4}-\d{2}-\d{2}_/.test(o.id)) {
+      return;
+    }
+
+    // Determine if this order is confirmed keyed-in:
+    // It's keyed in if present in Trade_log, recently submitted in this session, or marked keyed-in on server/local
+    const isConfirmedKeyedIn = validCloudIds.has(o.id) || recentlySubmitted.has(o.id) || o.isKeyedIn === true;
+
     // If this order is confirmed in Trade_log or Trade_log_admin:
     if (validCloudIds.has(o.id)) {
       const cloudOrder = map.get(o.id)!;
-      // If the local/server order has user modifications (e.g. added products, edited quantities/prices, or unkeyed status):
-      const isLocallyEdited = !o.isKeyedIn ||
-        (o.items && o.items.length !== cloudOrder.items?.length) ||
-        (o.updatedAt && (!cloudOrder.updatedAt || o.updatedAt > cloudOrder.updatedAt)) ||
-        (o.orderAmount !== undefined && o.orderAmount !== cloudOrder.orderAmount);
-
-      if (isLocallyEdited) {
-        map.set(o.id, {
-          ...cloudOrder,
-          ...o,
-          items: o.items && o.items.length > 0 ? o.items : cloudOrder.items,
-          orderAmount: o.orderAmount !== undefined ? o.orderAmount : cloudOrder.orderAmount,
-          remark: o.remark !== undefined ? o.remark : cloudOrder.remark,
-          isHeld: o.isHeld ?? cloudOrder.isHeld,
-          isKeyedIn: false,
-          updatedAt: o.updatedAt || Date.now()
-        });
-        return;
-      }
+      // If local/server has updated or more complete items (e.g. newly added goods), preserve them:
+      const preferredItems = (o.items && o.items.length >= (cloudOrder.items?.length || 0))
+        ? o.items
+        : (cloudOrder.items || o.items || []);
 
       map.set(o.id, {
         ...cloudOrder,
-        remark: o.remark || cloudOrder.remark,
-        isHeld: o.isHeld ?? cloudOrder.isHeld
+        ...o,
+        items: preferredItems,
+        orderAmount: o.orderAmount !== undefined ? o.orderAmount : cloudOrder.orderAmount,
+        remark: o.remark !== undefined ? o.remark : cloudOrder.remark,
+        isHeld: o.isHeld ?? cloudOrder.isHeld,
+        // If confirmed keyed-in, keep it as keyed-in; never accidentally revert to unkeyed!
+        isKeyedIn: isConfirmedKeyedIn ? true : (o.isKeyedIn ?? true)
       });
       return;
     }
 
     // If NOT in Trade_log / Trade_log_admin:
-    // ONLY keep if it is NOT keyed in yet (i.e. pending draft), or is currently held,
-    // or was recently submitted in the current session.
-    if (!o.isKeyedIn || o.isHeld || recentlySubmitted.has(o.id)) {
-      map.set(o.id, o);
-    }
+    // Keep it if it's confirmed keyed in, pending draft, held, or recently submitted
+    map.set(o.id, {
+      ...o,
+      isKeyedIn: isConfirmedKeyedIn ? true : (o.isKeyedIn ?? false)
+    });
   };
 
   for (const o of server) mergeCandidate(o);
@@ -158,6 +158,7 @@ const App: React.FC = () => {
   const handleSaveOrder = async (order: SavedOrder) => {
     // 1. Mark this order as actively created/saved so sync will never discard it
     activeSavedOrderIdsRef.current.add(order.id);
+    recentlySubmittedOrderIds.delete(order.id);
 
     // 2. Remove order.id from deletedOrderIds state and localStorage if present
     setDeletedOrderIds(prev => {
@@ -427,15 +428,23 @@ const App: React.FC = () => {
         if (!res) success = false;
       }
       if (success) {
-        ordersToKeyIn.forEach(o => recentlySubmittedOrderIds.add(o.id));
-        setSavedOrders(prev => prev.map(o => {
-          const shouldMark = ordersToKeyIn.some(toKey => toKey.id === o.id);
-          if (shouldMark) {
-            keyInServerOrder(o.id).catch(() => {});
-            return { ...o, isKeyedIn: true, isHeld: false };
-          }
-          return o;
-        }));
+        const keyedIds = ordersToKeyIn.map(o => o.id);
+        keyedIds.forEach(id => recentlySubmittedOrderIds.add(id));
+
+        setSavedOrders(prev => {
+          const next = prev.map(o => {
+            if (keyedIds.includes(o.id)) {
+              return { ...o, isKeyedIn: true, isHeld: false };
+            }
+            return o;
+          });
+          localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+          return next;
+        });
+
+        // Await server batch keyin so server state & file are updated BEFORE background loadData
+        await keyInServerOrdersBatch(keyedIds);
+
         loadData(undefined, true);
         return true;
       }
