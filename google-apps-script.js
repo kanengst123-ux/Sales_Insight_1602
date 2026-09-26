@@ -458,8 +458,26 @@ function handleWriteTradeLog(param) {
     sheet.appendRow(rows[i]);
   }
 
-  // Deduct inventory quantities from 'raw' sheet
-  deductInventoryFromRaw(ss, rows);
+  // Handle inventory quantities in 'raw' sheet:
+  // If skipStockDeduction is true or deductStock is false or keepStock is true:
+  // Stock was already deducted (e.g. held order keyed in again with no quantity changes).
+  var skipStock = param.skipStockDeduction === true || param.deductStock === false || param.keepStock === true;
+  var deltaDeduct = param.deltaRowsToDeduct;
+  var deltaReplenish = param.deltaRowsToReplenish;
+
+  if (skipStock) {
+    // Inventory already deducted/reserved; no changes to raw sheet stock
+  } else if ((deltaDeduct && deltaDeduct.length > 0) || (deltaReplenish && deltaReplenish.length > 0)) {
+    if (deltaDeduct && deltaDeduct.length > 0) {
+      deductInventoryFromRaw(ss, deltaDeduct);
+    }
+    if (deltaReplenish && deltaReplenish.length > 0) {
+      replenishInventoryInRaw(ss, deltaReplenish);
+    }
+  } else {
+    // Standard initial key-in: deduct full order quantity from 'raw' sheet
+    deductInventoryFromRaw(ss, rows);
+  }
 
   SpreadsheetApp.flush();
   return {

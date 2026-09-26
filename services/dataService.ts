@@ -825,13 +825,27 @@ export const addProductToSheet = async (name: string, username: string): Promise
   }
 };
 
-export const writeTradeLogToSheet = async (rows: any[][], targetSheet: string = 'Trade_Log'): Promise<boolean> => {
+export interface WriteTradeLogOptions {
+  skipStockDeduction?: boolean;
+  deltaRowsToDeduct?: any[][];
+  deltaRowsToReplenish?: any[][];
+}
+
+export const writeTradeLogToSheet = async (
+  rows: any[][], 
+  targetSheet: string = 'Trade_Log',
+  options?: WriteTradeLogOptions
+): Promise<boolean> => {
   try {
     const payload = {
       action: 'writeTradeLog',
       rows,
       targetSheet,
-      isAdmin: targetSheet === 'Trade_log_admin'
+      isAdmin: targetSheet === 'Trade_log_admin',
+      skipStockDeduction: Boolean(options?.skipStockDeduction),
+      deductStock: !options?.skipStockDeduction,
+      deltaRowsToDeduct: options?.deltaRowsToDeduct || [],
+      deltaRowsToReplenish: options?.deltaRowsToReplenish || []
     };
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
@@ -1284,12 +1298,16 @@ export const toggleHoldServerOrder = async (orderId: string, isHeld?: boolean, o
 /**
  * Mark order as keyed in on the server
  */
-export const keyInServerOrder = async (orderId: string, isKeyedIn: boolean = true): Promise<boolean> => {
+export const keyInServerOrder = async (
+  orderId: string, 
+  isKeyedIn: boolean = true,
+  extra?: { stockDeducted?: boolean; deductedItems?: { name: string; quantity: number }[] }
+): Promise<boolean> => {
   try {
     const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/keyin`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isKeyedIn })
+      body: JSON.stringify({ isKeyedIn, ...extra })
     });
     return res.ok;
   } catch (e) {
@@ -1301,12 +1319,15 @@ export const keyInServerOrder = async (orderId: string, isKeyedIn: boolean = tru
 /**
  * Batch mark orders as keyed in on the server
  */
-export const keyInServerOrdersBatch = async (orderIds: string[]): Promise<boolean> => {
+export const keyInServerOrdersBatch = async (
+  orderIds: string[],
+  orders?: SavedOrder[]
+): Promise<boolean> => {
   try {
     const res = await fetch('/api/orders/keyin-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderIds })
+      body: JSON.stringify({ orderIds, orders })
     });
     return res.ok;
   } catch (e) {

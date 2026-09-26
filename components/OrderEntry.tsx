@@ -228,7 +228,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     const map = new Map<string, number>();
     if (savedOrders) {
       savedOrders.forEach(order => {
-        if (order.isKeyedIn) return;
+        // If the order has already had its inventory deducted in the Google Sheet raw tab
+        // (either keyed in, or held after keying in), do NOT double-deduct it in the client reservation calculation!
+        if (order.isKeyedIn || order.stockDeducted) return;
         if (editingOrder && order.id === editingOrder.id) return;
         order.items.forEach(item => {
           map.set(item.name, (map.get(item.name) || 0) + item.quantity);

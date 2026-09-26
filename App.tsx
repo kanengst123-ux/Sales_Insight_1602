@@ -61,7 +61,13 @@ const mergeOrderLists = (
         continue;
       }
       validCloudIds.add(o.id);
-      map.set(o.id, { ...o, isKeyedIn: true, isHeld: false });
+      map.set(o.id, { 
+        ...o, 
+        isKeyedIn: true, 
+        isHeld: false,
+        stockDeducted: true,
+        deductedItems: o.items ? o.items.map(it => ({ name: it.name, quantity: it.quantity })) : []
+      });
     }
   }
 
@@ -118,6 +124,15 @@ const mergeOrderLists = (
         isKeyedIn = Boolean(existing.isKeyedIn);
       }
 
+      const stockDeducted = Boolean(
+        candidateIsNewer && o.stockDeducted !== undefined
+          ? o.stockDeducted
+          : (existing.stockDeducted || o.stockDeducted || existing.isKeyedIn || o.isKeyedIn)
+      );
+      const deductedItems = (candidateIsNewer && o.deductedItems)
+        ? o.deductedItems
+        : (existing.deductedItems || o.deductedItems || (stockDeducted ? (existing.items || o.items) : undefined));
+
       map.set(o.id, {
         ...existing,
         ...o,
@@ -126,6 +141,8 @@ const mergeOrderLists = (
         remark: preferredRemark,
         isHeld,
         isKeyedIn,
+        stockDeducted,
+        deductedItems,
         updatedAt: Math.max(existing.updatedAt || 0, o.updatedAt || 0)
       });
       return;
@@ -144,10 +161,15 @@ const mergeOrderLists = (
       isKeyedIn = Boolean(o.isKeyedIn);
     }
 
+    const stockDeducted = Boolean(o.stockDeducted || o.isKeyedIn);
+    const deductedItems = o.deductedItems || (stockDeducted && o.items ? o.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+
     map.set(o.id, {
       ...o,
       isHeld,
-      isKeyedIn
+      isKeyedIn,
+      stockDeducted,
+      deductedItems
     });
   };
 
@@ -236,6 +258,8 @@ const App: React.FC = () => {
     const orderToSave: SavedOrder = {
       ...order,
       isKeyedIn: false,
+      stockDeducted: order.stockDeducted !== undefined ? order.stockDeducted : existingOrder?.stockDeducted,
+      deductedItems: order.deductedItems || existingOrder?.deductedItems,
       updatedAt: Date.now()
     };
 
@@ -265,7 +289,10 @@ const App: React.FC = () => {
     setActiveTab('saved_orders');
 
     try {
-      await keyInServerOrder(orderToSave.id, false);
+      await keyInServerOrder(orderToSave.id, false, {
+        stockDeducted: orderToSave.stockDeducted,
+        deductedItems: orderToSave.deductedItems
+      });
       await saveServerOrder(orderToSave);
     } catch (e) {
       console.warn("Failed to sync new order to server:", e);
@@ -285,6 +312,8 @@ const App: React.FC = () => {
     const unkeyedOrder: SavedOrder = {
       ...order,
       isKeyedIn: false,
+      stockDeducted: order.stockDeducted,
+      deductedItems: order.deductedItems,
       updatedAt: Date.now()
     };
     setSavedOrders(prev => {
@@ -292,47 +321,14 @@ const App: React.FC = () => {
       localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
       return next;
     });
-    keyInServerOrder(order.id, false).catch(() => {});
+    keyInServerOrder(order.id, false, {
+      stockDeducted: order.stockDeducted,
+      deductedItems: order.deductedItems
+    }).catch(() => {});
     saveServerOrder(unkeyedOrder).catch(() => {});
 
     setEditingOrder(unkeyedOrder);
     setActiveTab('order');
-  };
-
-  const handleToggleKeyIn = async (orderId: string) => {
-    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
-    const existingOrder = savedOrders.find(o => o.id === orderId);
-    if (existingOrder && !isOrderOwner(existingOrder, activeRole)) {
-      alert(`您只能為屬於自己的訂單入機！\n此訂單業務為：${existingOrder.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
-      return;
-    }
-
-    let newStatus = false;
-    let targetOrder: SavedOrder | undefined;
-
-    setSavedOrders(prev => {
-      const next = prev.map(o => {
-        if (o.id === orderId) {
-          newStatus = !o.isKeyedIn;
-          targetOrder = { ...o, isKeyedIn: newStatus, updatedAt: Date.now() };
-          return targetOrder;
-        }
-        return o;
-      });
-      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
-      return next;
-    });
-
-    if (newStatus) {
-      recentlySubmittedOrderIds.add(orderId);
-    } else {
-      recentlySubmittedOrderIds.delete(orderId);
-    }
-
-    if (targetOrder) {
-      keyInServerOrder(orderId, newStatus).catch(() => {});
-      saveServerOrder(targetOrder).catch(() => {});
-    }
   };
 
   const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
@@ -377,6 +373,205 @@ const App: React.FC = () => {
     });
   };
 
+  const buildFullTradeRows = (order: SavedOrder, sentTimeStr?: string): any[][] => {
+    const sentTime = sentTimeStr || (() => {
+      const date = new Date();
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const ss = String(date.getSeconds()).padStart(2, '0');
+      return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+    })();
+
+    const custObj = customers.find(c => c.name.trim() === order.customerName.trim());
+    const district = custObj?.district || "";
+
+    return (order.items || []).map((item, index) => {
+      const remarkCol = index === 0 ? (order.remark || '') : '';
+      const totalQty = item.quantity;
+      const parsed = parseProductPacking(item.name);
+      let colD_qty = totalQty;
+      let colE_unit = "unit";
+      let colF_ref = 1;
+      if (parsed && totalQty % parsed.outerQty === 0) {
+        colD_qty = totalQty / parsed.outerQty;
+        colE_unit = parsed.outerUnit;
+        colF_ref = parsed.outerQty;
+      }
+      const matchedProd = products.find(p => p.name.trim() === item.name.trim());
+      const productId = matchedProd?.id || "";
+      const subtotal = item.quantity * item.price;
+
+      return [
+        sentTime,             // Col A: Date & time sent
+        item.name,            // Col B: Item (product name)
+        productId,            // Col C: Product ID
+        colD_qty,             // Col D: Quantity
+        colE_unit,            // Col E: Unit
+        colF_ref,             // Col F: Ref
+        item.price,           // Col G: Price
+        order.customerName,   // Col H: Customer name
+        district,             // Col I: District
+        subtotal,             // Col J: Subtotal
+        order.salesName,      // Col K: User name
+        "",                   // Col L: Status
+        order.id,             // Col M: Order ID
+        remarkCol             // Col N: Remark
+      ];
+    });
+  };
+
+  /**
+   * Calculates stock adjustment delta for a set of orders.
+   * If an order was already keyed in / held, its goods were already deducted.
+   * We only deduct/replenish if the items or quantities changed!
+   */
+  const calculateStockAdjustment = (orders: SavedOrder[]) => {
+    let allAlreadyDeductedWithNoChanges = true;
+    const deltaRowsToDeduct: any[][] = [];
+    const deltaRowsToReplenish: any[][] = [];
+
+    orders.forEach(order => {
+      if (!order.stockDeducted) {
+        allAlreadyDeductedWithNoChanges = false;
+        // Never deducted before: full quantity needs to be deducted
+        (order.items || []).forEach(it => {
+          const parsed = parseProductPacking(it.name);
+          let colD = it.quantity;
+          let colF = 1;
+          let colE = "unit";
+          if (parsed && it.quantity % parsed.outerQty === 0) {
+            colD = it.quantity / parsed.outerQty;
+            colE = parsed.outerUnit;
+            colF = parsed.outerQty;
+          }
+          deltaRowsToDeduct.push(["", it.name, "", colD, colE, colF]);
+        });
+      } else {
+        // Previously deducted (e.g. was keyed in, then '暫存' pressed, now keyed in again)
+        const prevMap = new Map<string, number>();
+        (order.deductedItems || []).forEach(it => {
+          prevMap.set(it.name, (prevMap.get(it.name) || 0) + it.quantity);
+        });
+
+        const currMap = new Map<string, number>();
+        (order.items || []).forEach(it => {
+          currMap.set(it.name, (currMap.get(it.name) || 0) + it.quantity);
+        });
+
+        const allKeys = new Set([...prevMap.keys(), ...currMap.keys()]);
+        allKeys.forEach(pName => {
+          const prevQ = prevMap.get(pName) || 0;
+          const currQ = currMap.get(pName) || 0;
+          const diff = currQ - prevQ;
+          if (diff > 0) {
+            allAlreadyDeductedWithNoChanges = false;
+            deltaRowsToDeduct.push(["", pName, "", diff, "unit", 1]);
+          } else if (diff < 0) {
+            allAlreadyDeductedWithNoChanges = false;
+            deltaRowsToReplenish.push(["", pName, "", Math.abs(diff), "unit", 1]);
+          }
+        });
+      }
+    });
+
+    const anyBrandNew = orders.some(o => !o.stockDeducted);
+    const anyPreviouslyDeducted = orders.some(o => o.stockDeducted);
+
+    if (allAlreadyDeductedWithNoChanges && !anyBrandNew) {
+      return { skipStockDeduction: true, deltaRowsToDeduct: [], deltaRowsToReplenish: [] };
+    }
+
+    if (anyPreviouslyDeducted) {
+      return { skipStockDeduction: false, deltaRowsToDeduct, deltaRowsToReplenish };
+    }
+
+    // All are brand new orders
+    return { skipStockDeduction: false, deltaRowsToDeduct: [], deltaRowsToReplenish: [] };
+  };
+
+  const handleToggleKeyIn = async (orderId: string) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    const existingOrder = savedOrders.find(o => o.id === orderId);
+    if (existingOrder && !isOrderOwner(existingOrder, activeRole)) {
+      alert(`您只能為屬於自己的訂單入機！\n此訂單業務為：${existingOrder.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
+      return;
+    }
+    if (!existingOrder) return;
+
+    const newStatus = !existingOrder.isKeyedIn;
+
+    if (newStatus) {
+      // 1. User pressed '入機' on this order!
+      recentlySubmittedOrderIds.add(orderId);
+      const rows = buildFullTradeRows(existingOrder);
+      const isAdmin = existingOrder.salesName?.trim().toLowerCase() === 'admin';
+      const targetSheet = isAdmin ? 'Trade_log_admin' : 'Trade_Log';
+      const options = calculateStockAdjustment([existingOrder]);
+
+      const currentDeducted = existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity }));
+      const updatedOrder: SavedOrder = {
+        ...existingOrder,
+        isKeyedIn: true,
+        isHeld: false,
+        stockDeducted: true,
+        deductedItems: currentDeducted,
+        updatedAt: Date.now()
+      };
+
+      setSavedOrders(prev => {
+        const next = prev.map(o => o.id === orderId ? updatedOrder : o);
+        localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+        return next;
+      });
+
+      try {
+        await writeTradeLogToSheet(rows, targetSheet, options);
+        await keyInServerOrder(orderId, true, {
+          stockDeducted: true,
+          deductedItems: currentDeducted
+        });
+        await saveServerOrder(updatedOrder);
+        loadData(undefined, true);
+      } catch (err) {
+        console.error('Error keying in order:', err);
+      }
+    } else {
+      // 2. User toggled back to unkeyed/hold: remove from Trade_log while keeping stock
+      recentlySubmittedOrderIds.delete(orderId);
+      const stockDeducted = Boolean(existingOrder.stockDeducted || existingOrder.isKeyedIn);
+      const currentDeducted = existingOrder.deductedItems && existingOrder.deductedItems.length > 0
+        ? existingOrder.deductedItems
+        : (stockDeducted ? existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+
+      const updatedOrder: SavedOrder = {
+        ...existingOrder,
+        isKeyedIn: false,
+        isHeld: true,
+        stockDeducted,
+        deductedItems: currentDeducted,
+        updatedAt: Date.now()
+      };
+
+      setSavedOrders(prev => {
+        const next = prev.map(o => o.id === orderId ? updatedOrder : o);
+        localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+        return next;
+      });
+
+      try {
+        await removeOrderFromSheetKeepStock(orderId);
+        await toggleHoldServerOrder(orderId, true, updatedOrder);
+        await saveServerOrder(updatedOrder);
+        loadData(undefined, true);
+      } catch (err) {
+        console.error('Error unkeying order:', err);
+      }
+    }
+  };
+
   const handleDeleteOrder = async (orderId: string) => {
     if (deletingOrderIdsRef.current.has(orderId)) return;
 
@@ -414,11 +609,26 @@ const App: React.FC = () => {
         localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
       }
 
-      // 5. When deleting an order (whether keyed-in or held):
+      // 5. When deleting an order (whether keyed-in, held, or with deducted stock):
       // Because putting an order on '暫存' keeps the goods on hold (stock unchanged),
       // deleting the order releases the reserved goods and replenishes stock in Google Sheet!
-      if (orderToDelete && (orderToDelete.isKeyedIn || orderToDelete.isHeld)) {
-        const rowsToSend = buildTradeRowsForOrder(orderToDelete);
+      if (orderToDelete && (orderToDelete.isKeyedIn || orderToDelete.isHeld || orderToDelete.stockDeducted)) {
+        const itemsToReplenish = (orderToDelete.deductedItems && orderToDelete.deductedItems.length > 0)
+          ? orderToDelete.deductedItems.map(it => {
+              const matchedItem = orderToDelete.items?.find(i => i.name === it.name);
+              return {
+                id: matchedItem?.id || `${orderToDelete.id}-del-${it.name}`,
+                name: it.name,
+                quantity: it.quantity,
+                price: matchedItem?.price || 0,
+                isOuterBox: false,
+                unitsPerBox: 1,
+                outerBoxUnit: "unit"
+              };
+            })
+          : orderToDelete.items;
+        
+        const rowsToSend = buildTradeRowsForOrder({ ...orderToDelete, items: itemsToReplenish });
         await deleteOrderFromSheet(orderId, rowsToSend);
       }
       loadData(undefined, true);
@@ -447,10 +657,19 @@ const App: React.FC = () => {
       recentlySubmittedOrderIds.delete(orderId);
     }
 
+    // If putting on hold after being keyed-in:
+    // Goods remain reserved (stock unchanged in raw), so stockDeducted is true!
+    const stockDeducted = Boolean(order.stockDeducted || order.isKeyedIn);
+    const deductedItems = order.deductedItems && order.deductedItems.length > 0
+      ? order.deductedItems
+      : (stockDeducted && order.items ? order.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+
     const updatedOrder: SavedOrder = {
       ...order,
       isHeld: newIsHeld,
       isKeyedIn: newIsKeyedIn,
+      stockDeducted,
+      deductedItems,
       updatedAt: nowTime
     };
 
@@ -551,73 +770,48 @@ const App: React.FC = () => {
       };
 
       const sentTime = formatDateTime(new Date());
+      const adminOrders = ordersToKeyIn.filter(o => o.salesName?.trim().toLowerCase() === 'admin');
+      const regularOrders = ordersToKeyIn.filter(o => o.salesName?.trim().toLowerCase() !== 'admin');
+
       const adminRows: any[][] = [];
+      adminOrders.forEach(o => {
+        adminRows.push(...buildFullTradeRows(o, sentTime));
+      });
+
       const regularRows: any[][] = [];
-
-      ordersToKeyIn.forEach(order => {
-        const isAdminOrder = order.salesName?.trim().toLowerCase() === 'admin';
-        const targetRows = isAdminOrder ? adminRows : regularRows;
-
-        order.items.forEach((item, index) => {
-          const remarkCol = index === 0 ? (order.remark || '') : '';
-          
-          const totalQty = item.quantity;
-          const parsed = parseProductPacking(item.name);
-          let colD_qty = totalQty;
-          let colE_unit = "unit";
-          let colF_ref = 1;
-
-          if (parsed) {
-            if (totalQty % parsed.outerQty === 0) {
-              colD_qty = totalQty / parsed.outerQty;
-              colE_unit = parsed.outerUnit;
-              colF_ref = parsed.outerQty;
-            }
-          }
-
-          const custObj = customers.find(c => c.name.trim() === order.customerName.trim());
-          const district = custObj?.district || "";
-          const subtotal = item.quantity * item.price;
-
-          const matchedProd = products.find(p => p.name.trim() === item.name.trim());
-          const productId = matchedProd?.id || "";
-
-          targetRows.push([
-            sentTime,             // Col A: Date & time sent
-            item.name,            // Col B: Item (product name)
-            productId,            // Col C: Product ID (Col B of raw tab)
-            colD_qty,             // Col D: Quantity
-            colE_unit,            // Col E: Unit
-            colF_ref,             // Col F: Ref
-            item.price,           // Col G: Price
-            order.customerName,   // Col H: Customers name
-            district,             // Col I: district
-            subtotal,             // Col J: Subtotal
-            order.salesName,      // Col K: User name
-            "",                   // Col L: Empty placeholder/status
-            order.id,             // Col M: Order ID
-            remarkCol             // Col N: Remark (備註)
-          ]);
-        });
+      regularOrders.forEach(o => {
+        regularRows.push(...buildFullTradeRows(o, sentTime));
       });
 
       let success = true;
       if (regularRows.length > 0) {
-        const res = await writeTradeLogToSheet(regularRows, 'Trade_Log');
+        const regOptions = calculateStockAdjustment(regularOrders);
+        const res = await writeTradeLogToSheet(regularRows, 'Trade_Log', regOptions);
         if (!res) success = false;
       }
       if (adminRows.length > 0) {
-        const res = await writeTradeLogToSheet(adminRows, 'Trade_log_admin');
+        const adminOptions = calculateStockAdjustment(adminOrders);
+        const res = await writeTradeLogToSheet(adminRows, 'Trade_log_admin', adminOptions);
         if (!res) success = false;
       }
       if (success) {
         const keyedIds = ordersToKeyIn.map(o => o.id);
         keyedIds.forEach(id => recentlySubmittedOrderIds.add(id));
 
+        const updatedOrdersList: SavedOrder[] = [];
         setSavedOrders(prev => {
           const next = prev.map(o => {
             if (keyedIds.includes(o.id)) {
-              return { ...o, isKeyedIn: true, isHeld: false };
+              const updated: SavedOrder = { 
+                ...o, 
+                isKeyedIn: true, 
+                isHeld: false,
+                stockDeducted: true,
+                deductedItems: o.items.map(it => ({ name: it.name, quantity: it.quantity })),
+                updatedAt: Date.now()
+              };
+              updatedOrdersList.push(updated);
+              return updated;
             }
             return o;
           });
@@ -626,7 +820,7 @@ const App: React.FC = () => {
         });
 
         // Await server batch keyin so server state & file are updated BEFORE background loadData
-        await keyInServerOrdersBatch(keyedIds);
+        await keyInServerOrdersBatch(keyedIds, updatedOrdersList);
 
         loadData(undefined, true);
         return true;

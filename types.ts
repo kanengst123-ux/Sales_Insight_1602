@@ -101,6 +101,8 @@ export interface SavedOrder {
   isHeld?: boolean;
   isKeyedIn?: boolean;
   updatedAt?: number;
+  stockDeducted?: boolean;
+  deductedItems?: { name: string; quantity: number }[];
 }
 
 export const APP_USERS = ['Admin', 'EVA', 'KATIE', 'KASEY', 'YO'] as const;

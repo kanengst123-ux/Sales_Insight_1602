@@ -743,6 +743,10 @@ async function startServer() {
       current.isHeld = nextHeld;
       if (nextHeld) {
         current.isKeyedIn = false;
+        current.stockDeducted = current.stockDeducted ?? true;
+        if (!current.deductedItems && current.items) {
+          current.deductedItems = current.items.map((it: any) => ({ name: it.name, quantity: it.quantity }));
+        }
       }
       current.updatedAt = Date.now();
       if (orderData && typeof orderData === "object") {
@@ -752,6 +756,8 @@ async function startServer() {
           id: orderId, 
           isHeld: nextHeld, 
           isKeyedIn: nextHeld ? false : (orderData.isKeyedIn !== undefined ? orderData.isKeyedIn : current.isKeyedIn), 
+          stockDeducted: orderData.stockDeducted !== undefined ? orderData.stockDeducted : current.stockDeducted,
+          deductedItems: orderData.deductedItems || current.deductedItems,
           updatedAt: Date.now() 
         };
       }
@@ -766,6 +772,8 @@ async function startServer() {
         id: orderId,
         isHeld: nextHeld,
         isKeyedIn: nextHeld ? false : Boolean(base.isKeyedIn),
+        stockDeducted: base.stockDeducted !== undefined ? base.stockDeducted : true,
+        deductedItems: base.deductedItems || (base.items ? base.items.map((it: any) => ({ name: it.name, quantity: it.quantity })) : undefined),
         updatedAt: Date.now()
       };
       orders.unshift(updatedOrder);
@@ -806,9 +814,18 @@ async function startServer() {
     if (order) {
       order.isKeyedIn = isKeyedIn;
       if (isKeyedIn) order.isHeld = false;
+      if (req.body.stockDeducted !== undefined) order.stockDeducted = req.body.stockDeducted;
+      if (req.body.deductedItems !== undefined) order.deductedItems = req.body.deductedItems;
       order.updatedAt = Date.now();
     } else {
-      orders.unshift({ id: orderId, isKeyedIn, isHeld: false, updatedAt: Date.now() });
+      orders.unshift({ 
+        id: orderId, 
+        isKeyedIn, 
+        isHeld: false, 
+        stockDeducted: req.body.stockDeducted !== undefined ? req.body.stockDeducted : isKeyedIn,
+        deductedItems: req.body.deductedItems,
+        updatedAt: Date.now() 
+      });
     }
     saveOrdersToFile(orders);
     lastTradeFetchTime = 0; // Force immediate refresh of trade orders from Google Sheets
@@ -818,23 +835,39 @@ async function startServer() {
   // Batch mark orders as keyed in
   app.post("/api/orders/keyin-batch", (req, res) => {
     const orderIds: string[] = req.body.orderIds || [];
+    const incomingOrders: any[] = req.body.orders || [];
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       res.json({ success: true, count: 0 });
       return;
     }
+    const incomingMap = new Map<string, any>();
+    incomingOrders.forEach(o => { if (o && o.id) incomingMap.set(o.id, o); });
+
     const idSet = new Set(orderIds);
     const orders = getSavedOrders();
     orders.forEach((o: any) => {
       if (idSet.has(o.id)) {
         o.isKeyedIn = true;
         o.isHeld = false;
+        o.stockDeducted = true;
+        const extra = incomingMap.get(o.id);
+        if (extra?.deductedItems) o.deductedItems = extra.deductedItems;
+        else if (!o.deductedItems && o.items) o.deductedItems = o.items.map((it: any) => ({ name: it.name, quantity: it.quantity }));
         o.updatedAt = Date.now();
         idSet.delete(o.id);
       }
     });
     // Add any remaining order IDs that weren't in saved_orders.json
     idSet.forEach(id => {
-      orders.unshift({ id, isKeyedIn: true, isHeld: false, updatedAt: Date.now() });
+      const extra = incomingMap.get(id);
+      orders.unshift({ 
+        id, 
+        isKeyedIn: true, 
+        isHeld: false, 
+        stockDeducted: true,
+        deductedItems: extra?.deductedItems,
+        updatedAt: Date.now() 
+      });
     });
     saveOrdersToFile(orders);
     lastTradeFetchTime = 0; // Force immediate refresh of trade orders from Google Sheets
