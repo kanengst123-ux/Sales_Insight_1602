@@ -6,6 +6,7 @@ import {
   fetchCustomerGrades, 
   writeTradeLogToSheet, 
   deleteOrderFromSheet, 
+  removeOrderFromSheetKeepStock,
   fetchProducts,
   fetchCloudTradeLogOrders,
   fetchServerOrders,
@@ -41,10 +42,24 @@ const mergeOrderLists = (
   const map = new Map<string, SavedOrder>();
   const validCloudIds = new Set<string>();
 
-  // 1. Cloud orders come EXCLUSIVELY from 'Trade_log' & 'Trade_log_admin' tabs of 'Product_list'
-  // Every order in cloud is an authentic, confirmed keyed-in order.
+  // Collect held order IDs across local and server so cloud never cancels a held order
+  const heldOrderIds = new Set<string>();
+  for (const o of local) {
+    if (o && o.id && o.isHeld) heldOrderIds.add(o.id);
+  }
+  for (const o of server) {
+    if (o && o.id && o.isHeld) heldOrderIds.add(o.id);
+  }
+
+  // 1. Cloud orders come from 'Trade_log' & 'Trade_log_admin' tabs of 'Product_list'
   for (const o of cloud) {
     if (o && o.id && !deletedIds.has(o.id)) {
+      // If the order was put on '暫存', it is being removed from Trade_log.
+      // Google Sheets CSV caching may take a few seconds to reflect row deletion,
+      // so we must NEVER allow stale cloud cache to unhold or key-in a held order!
+      if (heldOrderIds.has(o.id)) {
+        continue;
+      }
       validCloudIds.add(o.id);
       map.set(o.id, { ...o, isKeyedIn: true, isHeld: false });
     }
@@ -79,18 +94,28 @@ const mergeOrderLists = (
         ? o.remark
         : (o.remark || existing.remark);
 
+      // Determine hold status:
+      // If candidate or existing is held:
+      let isHeld = false;
+      if (candidateIsNewer && o.isHeld !== undefined) {
+        isHeld = o.isHeld;
+      } else {
+        isHeld = Boolean(o.isHeld || existing.isHeld);
+      }
+
       // Determine keyed in status:
-      // 1. If explicitly submitted in current session: ALWAYS true!
-      // 2. If candidate has isKeyedIn === false and wasn't submitted in this session: FALSE!
-      // 3. If candidate is newer and specifies isKeyedIn: use candidate's isKeyedIn
-      // 4. Otherwise keep existing status (from cloud or previous candidate)
-      let isKeyedIn = existing.isKeyedIn;
-      if (recentlySubmitted.has(o.id)) {
+      // When an order is held, it MUST STAY as '未入機' (isKeyedIn: false)!
+      let isKeyedIn = false;
+      if (isHeld) {
+        isKeyedIn = false;
+      } else if (recentlySubmitted.has(o.id)) {
         isKeyedIn = true;
       } else if (o.isKeyedIn === false) {
         isKeyedIn = false;
       } else if (candidateIsNewer && o.isKeyedIn !== undefined) {
         isKeyedIn = o.isKeyedIn;
+      } else {
+        isKeyedIn = Boolean(existing.isKeyedIn);
       }
 
       map.set(o.id, {
@@ -99,7 +124,7 @@ const mergeOrderLists = (
         items: preferredItems,
         orderAmount: preferredAmount,
         remark: preferredRemark,
-        isHeld: candidateIsNewer ? (o.isHeld ?? existing.isHeld) : (existing.isHeld ?? o.isHeld),
+        isHeld,
         isKeyedIn,
         updatedAt: Math.max(existing.updatedAt || 0, o.updatedAt || 0)
       });
@@ -107,15 +132,21 @@ const mergeOrderLists = (
     }
 
     // If NOT in Trade_log / Trade_log_admin yet:
-    let isKeyedIn = o.isKeyedIn ?? false;
-    if (recentlySubmitted.has(o.id)) {
+    const isHeld = Boolean(o.isHeld);
+    let isKeyedIn = false;
+    if (isHeld) {
+      isKeyedIn = false;
+    } else if (recentlySubmitted.has(o.id)) {
       isKeyedIn = true;
     } else if (o.isKeyedIn === false) {
       isKeyedIn = false;
+    } else {
+      isKeyedIn = Boolean(o.isKeyedIn);
     }
 
     map.set(o.id, {
       ...o,
+      isHeld,
       isKeyedIn
     });
   };
@@ -383,10 +414,10 @@ const App: React.FC = () => {
         localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
       }
 
-      // 5. When deleting a keyed-in order (whether held or not):
+      // 5. When deleting an order (whether keyed-in or held):
       // Because putting an order on '暫存' keeps the goods on hold (stock unchanged),
-      // deleting the order now releases the reserved goods and replenishes stock in Google Sheet!
-      if (orderToDelete && orderToDelete.isKeyedIn) {
+      // deleting the order releases the reserved goods and replenishes stock in Google Sheet!
+      if (orderToDelete && (orderToDelete.isKeyedIn || orderToDelete.isHeld)) {
         const rowsToSend = buildTradeRowsForOrder(orderToDelete);
         await deleteOrderFromSheet(orderId, rowsToSend);
       }
@@ -408,20 +439,46 @@ const App: React.FC = () => {
     }
 
     const newIsHeld = !order.isHeld;
+    const newIsKeyedIn = newIsHeld ? false : order.isKeyedIn;
+    const nowTime = Date.now();
 
-    // Update local state - preserve isKeyedIn and toggle isHeld
-    setSavedOrders(prev => prev.map(o => 
-      o.id === orderId ? { ...o, isHeld: newIsHeld } : o
-    ));
-
-    try {
-      await toggleHoldServerOrder(orderId);
-    } catch (e) {
-      console.warn("Failed to toggle hold on server:", e);
+    // 1. If putting on hold, remove from recentlySubmitted tracking so it will not be treated as keyed-in
+    if (newIsHeld) {
+      recentlySubmittedOrderIds.delete(orderId);
     }
 
-    // Per user instruction: when '暫存' is pressed, do NOT change the stock level!
-    // The goods are on hold for this order, so stock remains reserved/deducted.
+    const updatedOrder: SavedOrder = {
+      ...order,
+      isHeld: newIsHeld,
+      isKeyedIn: newIsKeyedIn,
+      updatedAt: nowTime
+    };
+
+    // 2. Immediately update local state & localStorage so UI stays as '暫存' and '未入機'
+    setSavedOrders(prev => {
+      const next = prev.map(o => o.id === orderId ? updatedOrder : o);
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
+    });
+
+    // 3. Purge from local persistent trade cache
+    purgeDeletedOrdersFromCache([orderId]);
+
+    // 4. Per user instruction:
+    // When '暫存' is pressed after pressing '入機':
+    // 1. Remove from 'Trade_log' tab or 'Trade_log_admin', while stock level does not change.
+    // 2. Stay as '暫存' and '未入機' in the order list.
+    try {
+      if (newIsHeld) {
+        // Send request to Google Sheet to remove from Trade_log / Trade_log_admin without replenishing stock!
+        removeOrderFromSheetKeepStock(orderId);
+      }
+      // Update hold state and full order on the server
+      await toggleHoldServerOrder(orderId, newIsHeld, updatedOrder);
+      await saveServerOrder(updatedOrder);
+    } catch (e) {
+      console.warn("Failed to toggle hold on server or Google Sheets:", e);
+    }
   };
 
   const generateNextOrderId = (userName: string): string => {

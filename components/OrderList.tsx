@@ -108,12 +108,18 @@ const OrderList: React.FC<OrderListProps> = ({
     let keyedIn = 0;
     let held = 0;
     roleFilteredOrders.forEach(o => {
-      if (o.isHeld) held++;
-      else if (o.isKeyedIn) keyedIn++;
-      else pending++;
+      // Other users cannot see if an order is '暫存': only the owner sees an order as held
+      const owner = isOwner(o);
+      if (owner && o.isHeld) {
+        held++;
+      } else if (o.isKeyedIn) {
+        keyedIn++;
+      } else {
+        pending++;
+      }
     });
     return { total: roleFilteredOrders.length, pending, keyedIn, held };
-  }, [roleFilteredOrders]);
+  }, [roleFilteredOrders, currentRole]);
 
   // Detailed filtering by user, status, and search query
   const filteredOrders = useMemo(() => {
@@ -124,9 +130,12 @@ const OrderList: React.FC<OrderListProps> = ({
       }
 
       // Status filter
-      if (statusFilter === 'PENDING' && (order.isKeyedIn || order.isHeld)) return false;
+      // Other users cannot see if an order is '暫存':
+      const isHeldForUser = isOwner(order) && Boolean(order.isHeld);
+
+      if (statusFilter === 'PENDING' && (order.isKeyedIn || isHeldForUser)) return false;
       if (statusFilter === 'KEYED_IN' && !order.isKeyedIn) return false;
-      if (statusFilter === 'HELD' && !order.isHeld) return false;
+      if (statusFilter === 'HELD' && !isHeldForUser) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -143,7 +152,7 @@ const OrderList: React.FC<OrderListProps> = ({
 
       return true;
     });
-  }, [roleFilteredOrders, selectedUser, statusFilter, searchQuery]);
+  }, [roleFilteredOrders, selectedUser, statusFilter, searchQuery, currentRole]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
@@ -506,7 +515,7 @@ const OrderList: React.FC<OrderListProps> = ({
                         className={`transition-colors group ${
                           orderOwner ? 'cursor-pointer' : 'cursor-default'
                         } ${
-                          order.isHeld 
+                          orderOwner && order.isHeld 
                             ? 'bg-amber-50/60 hover:bg-amber-100/60' 
                             : isExpanded 
                               ? 'bg-blue-50/40' 
@@ -545,7 +554,8 @@ const OrderList: React.FC<OrderListProps> = ({
                               )}
 
                               {/* Status Badges */}
-                              {order.isHeld && (
+                              {/* Requirement 3: Other users cannot see if an order is '暫存' */}
+                              {orderOwner && order.isHeld && (
                                 <span className="px-1.5 py-0.5 rounded-md text-[9px] bg-amber-500/15 text-amber-700 border border-amber-500/30 font-bold uppercase tracking-wider tabular-nums shrink-0 leading-none">
                                   暫存
                                 </span>
@@ -570,7 +580,8 @@ const OrderList: React.FC<OrderListProps> = ({
                                     已入機
                                   </span>
                                 )
-                              ) : !order.isHeld && (
+                              ) : (
+                                /* Requirement 2: Stay as '暫存' and '未入機' in the order list */
                                 orderOwner && onToggleKeyIn ? (
                                   <button
                                     type="button"

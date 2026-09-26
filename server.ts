@@ -731,15 +731,70 @@ async function startServer() {
   // Toggle hold on an order
   app.patch("/api/orders/:id/hold", (req, res) => {
     const orderId = req.params.id;
+    const { isHeld, orderData } = req.body || {};
     const orders = getSavedOrders();
-    const order = orders.find((o: any) => o.id === orderId);
-    if (order) {
-      order.isHeld = !order.isHeld;
-      saveOrdersToFile(orders);
-      res.json({ success: true, order });
+    const idx = orders.findIndex((o: any) => o.id === orderId);
+
+    let updatedOrder: any = null;
+
+    if (idx !== -1) {
+      const current = orders[idx];
+      const nextHeld = typeof isHeld === "boolean" ? isHeld : !current.isHeld;
+      current.isHeld = nextHeld;
+      if (nextHeld) {
+        current.isKeyedIn = false;
+      }
+      current.updatedAt = Date.now();
+      if (orderData && typeof orderData === "object") {
+        orders[idx] = { 
+          ...current, 
+          ...orderData, 
+          id: orderId, 
+          isHeld: nextHeld, 
+          isKeyedIn: nextHeld ? false : (orderData.isKeyedIn !== undefined ? orderData.isKeyedIn : current.isKeyedIn), 
+          updatedAt: Date.now() 
+        };
+      }
+      updatedOrder = orders[idx];
     } else {
-      res.status(404).json({ error: "Order not found" });
+      // Order not yet in saved_orders file (e.g. came directly from Trade_log)
+      const fromTrade = cachedTradeOrders.find((o: any) => o && o.id === orderId);
+      const base = orderData || fromTrade || { id: orderId };
+      const nextHeld = typeof isHeld === "boolean" ? isHeld : true;
+      updatedOrder = {
+        ...base,
+        id: orderId,
+        isHeld: nextHeld,
+        isKeyedIn: nextHeld ? false : Boolean(base.isKeyedIn),
+        updatedAt: Date.now()
+      };
+      orders.unshift(updatedOrder);
     }
+
+    // When an order is held, immediately remove from in-memory trade orders cache
+    if (updatedOrder && updatedOrder.isHeld) {
+      cachedTradeOrders = cachedTradeOrders.filter((o: any) => o && o.id !== orderId);
+      lastTradeFetchTime = 0;
+    }
+
+    saveOrdersToFile(orders);
+    res.json({ success: true, order: updatedOrder });
+  });
+
+  // Explicitly remove order from trade log cache
+  app.post("/api/orders/:id/remove-trade-log", (req, res) => {
+    const orderId = req.params.id;
+    cachedTradeOrders = cachedTradeOrders.filter((o: any) => o && o.id !== orderId);
+    lastTradeFetchTime = 0;
+    const orders = getSavedOrders();
+    const existing = orders.find((o: any) => o.id === orderId);
+    if (existing) {
+      existing.isKeyedIn = false;
+      existing.isHeld = true;
+      existing.updatedAt = Date.now();
+      saveOrdersToFile(orders);
+    }
+    res.json({ success: true, orderId });
   });
 
   // Mark order as keyed in or unkeyed

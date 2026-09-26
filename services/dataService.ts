@@ -868,6 +868,34 @@ export const deleteOrderFromSheet = async (orderId: string, rows?: any[][]): Pro
   }
 };
 
+/**
+ * Removes an order's trade log rows from Google Sheet ('Trade_log' or 'Trade_log_admin')
+ * without replenishing/changing stock levels in 'raw' (the goods stay reserved on hold).
+ */
+export const removeOrderFromSheetKeepStock = async (orderId: string): Promise<boolean> => {
+  try {
+    const payload = {
+      action: 'deleteOrder',
+      orderId,
+      skipStockReplenish: true,
+      keepStock: true,
+      replenishStock: false,
+      // Provide dummy row with length < 6 so any deployed version will not replenish stock
+      rows: [['SKIP_STOCK_REPLENISH']]
+    };
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (error) {
+    console.error('Error removing order from sheet while keeping stock:', error);
+    return false;
+  }
+};
+
 export const PRODUCT_LIST_SHEET_ID = '16yXbnBdkKuKCVGvhrUJ7YPFNVGBcyap3b5sbvqv0Dsg';
 export const TRADE_LOG_GID = '1412322886';
 export const TRADE_LOG_ADMIN_GID = '2071438386';
@@ -1239,10 +1267,12 @@ export const deleteServerOrder = async (orderId: string): Promise<string[]> => {
 /**
  * Toggle hold status on the server
  */
-export const toggleHoldServerOrder = async (orderId: string): Promise<boolean> => {
+export const toggleHoldServerOrder = async (orderId: string, isHeld?: boolean, orderData?: SavedOrder): Promise<boolean> => {
   try {
     const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/hold`, {
-      method: 'PATCH'
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isHeld, orderData })
     });
     return res.ok;
   } catch (e) {

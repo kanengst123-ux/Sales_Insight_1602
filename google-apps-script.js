@@ -70,8 +70,8 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // E. Action: deleteOrder (Deletes order and replenishes stock strictly 1x)
-    if (action === 'deleteOrder') {
+    // E. Action: deleteOrder / removeTradeLogRows (Deletes order and replenishes stock strictly 1x, or keeps stock unchanged if requested)
+    if (action === 'deleteOrder' || action === 'removeTradeLogRows' || action === 'deleteTradeLog') {
       var delResult = handleDeleteOrder(param);
       return ContentService.createTextOutput(JSON.stringify(delResult))
         .setMimeType(ContentService.MimeType.JSON);
@@ -478,8 +478,11 @@ function handleDeleteOrder(param) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var logSheets = getUniqueTradeLogSheets(ss);
 
+  // If keepStock or skipStockReplenish is true, inventory in 'raw' sheet is kept unchanged
+  var shouldReplenishStock = !param.keepStock && !param.skipStockReplenish && param.replenishStock !== false;
+
   // If trade rows to replenish were not explicitly provided, extract them from the sheets before deleting
-  if (orderId && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
+  if (shouldReplenishStock && orderId && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
     rowValuesToReplenish = [];
     logSheets.forEach(function(s) {
       var lRow = s.getLastRow();
@@ -496,7 +499,7 @@ function handleDeleteOrder(param) {
   }
 
   // Replenish stock in 'raw' sheet strictly ONCE
-  if (rowValuesToReplenish && rowValuesToReplenish.length > 0) {
+  if (shouldReplenishStock && rowValuesToReplenish && rowValuesToReplenish.length > 0) {
     replenishInventoryInRaw(ss, rowValuesToReplenish);
   }
 
