@@ -692,11 +692,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     console.warn('Published master product CSV fetch failed or timed out:', csvError);
   }
 
-  // 2. Quick check against GAS with 3.5s timeout for freshly added products
+  // 2. Quick check against GAS with 8s timeout for freshly added products and live stock
   if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
     try {
       const liveUrl = `${UPDATE_SCRIPT_URL}?action=getProducts&t=${Date.now()}`;
-      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 3500);
+      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 8000);
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json) && json.length > 0) {
@@ -862,9 +862,10 @@ export const writeTradeLogToSheet = async (
 
 export const deleteOrderFromSheet = async (orderId: string, rows?: any[][]): Promise<boolean> => {
   try {
-    const payload: { action: string; orderId: string; rows?: any[][] } = {
+    const payload: { action: string; orderId: string; replenishStock: boolean; rows?: any[][] } = {
       action: 'deleteOrder',
-      orderId
+      orderId,
+      replenishStock: true
     };
     if (rows && rows.length > 0) {
       payload.rows = rows;

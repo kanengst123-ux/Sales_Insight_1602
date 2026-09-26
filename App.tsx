@@ -18,7 +18,7 @@ import {
   keyInServerOrdersBatch,
   purgeDeletedOrdersFromCache
 } from './services/dataService';
-import { getCachedItem } from './services/cacheService';
+import { getCachedItem, setCachedItem } from './services/cacheService';
 import { SaleRecord, SalesAnalytics, SavedOrder, Customer, Product, APP_USERS, isOrderOwner } from './types';
 import Dashboard from './components/Dashboard';
 import PivotTable from './components/PivotTable';
@@ -124,14 +124,14 @@ const mergeOrderLists = (
         isKeyedIn = Boolean(existing.isKeyedIn);
       }
 
-      const stockDeducted = Boolean(
+      const stockDeducted = isHeld ? false : Boolean(
         candidateIsNewer && o.stockDeducted !== undefined
           ? o.stockDeducted
           : (existing.stockDeducted || o.stockDeducted || existing.isKeyedIn || o.isKeyedIn)
       );
-      const deductedItems = (candidateIsNewer && o.deductedItems)
+      const deductedItems = isHeld ? [] : ((candidateIsNewer && o.deductedItems)
         ? o.deductedItems
-        : (existing.deductedItems || o.deductedItems || (stockDeducted ? (existing.items || o.items) : undefined));
+        : (existing.deductedItems || o.deductedItems || (stockDeducted ? (existing.items || o.items) : undefined)));
 
       map.set(o.id, {
         ...existing,
@@ -161,8 +161,8 @@ const mergeOrderLists = (
       isKeyedIn = Boolean(o.isKeyedIn);
     }
 
-    const stockDeducted = Boolean(o.stockDeducted || o.isKeyedIn);
-    const deductedItems = o.deductedItems || (stockDeducted && o.items ? o.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+    const stockDeducted = isHeld ? false : Boolean(o.stockDeducted || o.isKeyedIn);
+    const deductedItems = isHeld ? [] : (o.deductedItems || (stockDeducted && o.items ? o.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined));
 
     map.set(o.id, {
       ...o,
@@ -355,10 +355,13 @@ const App: React.FC = () => {
         colE_unit = parsed.outerUnit;
         colF_ref = parsed.outerQty;
       }
+      const matchedProd = products.find(p => p.name.trim() === item.name.trim());
+      const productId = matchedProd?.id || "";
+
       return [
         "",                         // Col A: Date
         item.name,                  // Col B: Item
-        "",                         // Col C: Product ID
+        productId,                  // Col C: Product ID
         colD_qty,                   // Col D: Quantity
         colE_unit,                  // Col E: Unit
         colF_ref,                   // Col F: Ref
@@ -492,6 +495,40 @@ const App: React.FC = () => {
     return { skipStockDeduction: false, deltaRowsToDeduct: [], deltaRowsToReplenish: [] };
   };
 
+  /**
+   * Immediately adjusts product stock in local React state and client cache.
+   * mode === 'deduct': reduces stock (e.g. on '入機')
+   * mode === 'replenish': restores stock back (e.g. on '暫存' or '刪除')
+   */
+  const adjustLocalProductStock = useCallback((
+    items: { name: string; quantity: number }[] | undefined,
+    mode: 'deduct' | 'replenish'
+  ) => {
+    if (!items || items.length === 0) return;
+    const qtyMap = new Map<string, number>();
+    items.forEach(it => {
+      const q = Number(it.quantity) || 0;
+      if (q > 0) {
+        const norm = it.name.trim();
+        qtyMap.set(norm, (qtyMap.get(norm) || 0) + q);
+      }
+    });
+
+    setProducts(prev => {
+      const updated = prev.map(p => {
+        const norm = p.name.trim();
+        const change = qtyMap.get(norm);
+        if (change !== undefined && p.stock !== undefined && !p.unlimitedStock) {
+          const nextStock = mode === 'deduct' ? (p.stock - change) : (p.stock + change);
+          return { ...p, stock: nextStock };
+        }
+        return p;
+      });
+      setCachedItem('products', updated);
+      return updated;
+    });
+  }, []);
+
   const handleToggleKeyIn = async (orderId: string) => {
     const activeRole = currentRole || localStorage.getItem('ws_selected_role');
     const existingOrder = savedOrders.find(o => o.id === orderId);
@@ -510,6 +547,9 @@ const App: React.FC = () => {
       const isAdmin = existingOrder.salesName?.trim().toLowerCase() === 'admin';
       const targetSheet = isAdmin ? 'Trade_log_admin' : 'Trade_Log';
       const options = calculateStockAdjustment([existingOrder]);
+
+      // Deduct stock in React state and client cache immediately!
+      adjustLocalProductStock(existingOrder.items, 'deduct');
 
       const currentDeducted = existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity }));
       const updatedOrder: SavedOrder = {
@@ -539,19 +579,21 @@ const App: React.FC = () => {
         console.error('Error keying in order:', err);
       }
     } else {
-      // 2. User toggled back to unkeyed/hold: remove from Trade_log while keeping stock
+      // 2. User toggled back to unkeyed/hold: remove from Trade_log and replenish stock back to original
       recentlySubmittedOrderIds.delete(orderId);
-      const stockDeducted = Boolean(existingOrder.stockDeducted || existingOrder.isKeyedIn);
-      const currentDeducted = existingOrder.deductedItems && existingOrder.deductedItems.length > 0
-        ? existingOrder.deductedItems
-        : (stockDeducted ? existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+      const wasKeyedIn = Boolean(existingOrder.isKeyedIn || existingOrder.stockDeducted);
+
+      if (wasKeyedIn) {
+        // Replenish stock in React state and client cache immediately back to original level!
+        adjustLocalProductStock(existingOrder.items, 'replenish');
+      }
 
       const updatedOrder: SavedOrder = {
         ...existingOrder,
         isKeyedIn: false,
         isHeld: true,
-        stockDeducted,
-        deductedItems: currentDeducted,
+        stockDeducted: false,
+        deductedItems: [],
         updatedAt: Date.now()
       };
 
@@ -562,7 +604,10 @@ const App: React.FC = () => {
       });
 
       try {
-        await removeOrderFromSheetKeepStock(orderId);
+        if (wasKeyedIn) {
+          const rowsToSend = buildTradeRowsForOrder(existingOrder);
+          await deleteOrderFromSheet(orderId, rowsToSend);
+        }
         await toggleHoldServerOrder(orderId, true, updatedOrder);
         await saveServerOrder(updatedOrder);
         loadData(undefined, true);
@@ -609,10 +654,15 @@ const App: React.FC = () => {
         localStorage.setItem('ws_deleted_order_ids', JSON.stringify(Array.from(nextDeletedSet)));
       }
 
-      // 5. When deleting an order (whether keyed-in, held, or with deducted stock):
-      // Because putting an order on '暫存' keeps the goods on hold (stock unchanged),
-      // deleting the order releases the reserved goods and replenishes stock in Google Sheet!
-      if (orderToDelete && (orderToDelete.isKeyedIn || orderToDelete.isHeld || orderToDelete.stockDeducted)) {
+      // 5. When deleting an order:
+      // If the order was keyed-in (or currently has deducted stock):
+      // deleting releases the goods and replenishes stock back to 100!
+      // If the order was in '暫存' (where stock was already replenished back to 100):
+      // deleting it does NOT replenish again (keeps stock unchanged at 100)!
+      if (orderToDelete && (orderToDelete.isKeyedIn || orderToDelete.stockDeducted)) {
+        // Replenish stock in React state and client cache immediately!
+        adjustLocalProductStock(orderToDelete.items, 'replenish');
+
         const itemsToReplenish = (orderToDelete.deductedItems && orderToDelete.deductedItems.length > 0)
           ? orderToDelete.deductedItems.map(it => {
               const matchedItem = orderToDelete.items?.find(i => i.name === it.name);
@@ -630,6 +680,10 @@ const App: React.FC = () => {
         
         const rowsToSend = buildTradeRowsForOrder({ ...orderToDelete, items: itemsToReplenish });
         await deleteOrderFromSheet(orderId, rowsToSend);
+      } else {
+        // Order was in '暫存' or unkeyed (stock was already replenished to 100).
+        // Remove from Trade_log without replenishing stock again!
+        await removeOrderFromSheetKeepStock(orderId);
       }
       loadData(undefined, true);
     } catch (e) {
@@ -649,7 +703,6 @@ const App: React.FC = () => {
     }
 
     const newIsHeld = !order.isHeld;
-    const newIsKeyedIn = newIsHeld ? false : order.isKeyedIn;
     const nowTime = Date.now();
 
     // 1. If putting on hold, remove from recentlySubmitted tracking so it will not be treated as keyed-in
@@ -657,19 +710,19 @@ const App: React.FC = () => {
       recentlySubmittedOrderIds.delete(orderId);
     }
 
-    // If putting on hold after being keyed-in:
-    // Goods remain reserved (stock unchanged in raw), so stockDeducted is true!
-    const stockDeducted = Boolean(order.stockDeducted || order.isKeyedIn);
-    const deductedItems = order.deductedItems && order.deductedItems.length > 0
-      ? order.deductedItems
-      : (stockDeducted && order.items ? order.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined);
+    const wasKeyedIn = Boolean(order.isKeyedIn || order.stockDeducted);
 
+    // Per user instruction:
+    // "Then '暫存' is pressed, stock level go back to 100.
+    // The order is now '暫存' and '未入機'"
+    // When putting an already keyed-in order on hold:
+    // Revert stock level back to original and reset stockDeducted to false!
     const updatedOrder: SavedOrder = {
       ...order,
       isHeld: newIsHeld,
-      isKeyedIn: newIsKeyedIn,
-      stockDeducted,
-      deductedItems,
+      isKeyedIn: false,
+      stockDeducted: false,
+      deductedItems: [],
       updatedAt: nowTime
     };
 
@@ -685,16 +738,26 @@ const App: React.FC = () => {
 
     // 4. Per user instruction:
     // When '暫存' is pressed after pressing '入機':
-    // 1. Remove from 'Trade_log' tab or 'Trade_log_admin', while stock level does not change.
-    // 2. Stay as '暫存' and '未入機' in the order list.
-    try {
-      if (newIsHeld) {
-        // Send request to Google Sheet to remove from Trade_log / Trade_log_admin without replenishing stock!
-        removeOrderFromSheetKeepStock(orderId);
+    // 1. Remove from 'Trade_log' tab or 'Trade_log_admin'.
+    // 2. Replenish stock level back to 100 in Google Sheet raw tab AND in React state!
+    // 3. Stay as '暫存' and '未入機' in the order list.
+    if (newIsHeld && wasKeyedIn) {
+      // Replenish stock in React state and client cache immediately back to 100!
+      adjustLocalProductStock(order.items, 'replenish');
+
+      try {
+        const rowsToSend = buildTradeRowsForOrder(order);
+        await deleteOrderFromSheet(orderId, rowsToSend);
+      } catch (sheetErr) {
+        console.warn("Failed to delete order from sheet or replenish raw:", sheetErr);
       }
+    }
+
+    try {
       // Update hold state and full order on the server
       await toggleHoldServerOrder(orderId, newIsHeld, updatedOrder);
       await saveServerOrder(updatedOrder);
+      loadData(undefined, true);
     } catch (e) {
       console.warn("Failed to toggle hold on server or Google Sheets:", e);
     }
@@ -797,6 +860,10 @@ const App: React.FC = () => {
       if (success) {
         const keyedIds = ordersToKeyIn.map(o => o.id);
         keyedIds.forEach(id => recentlySubmittedOrderIds.add(id));
+
+        // Deduct products in React state and client cache immediately!
+        const allKeyedItems = ordersToKeyIn.flatMap(o => o.items || []);
+        adjustLocalProductStock(allKeyedItems, 'deduct');
 
         const updatedOrdersList: SavedOrder[] = [];
         setSavedOrders(prev => {

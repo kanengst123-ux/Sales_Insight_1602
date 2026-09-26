@@ -603,10 +603,20 @@ function deductInventoryFromRaw(ss, rows) {
   var headers = findRawSheetHeaders(rawValues);
 
   var prodToIndex = {};
+  var prodIdToIndex = {};
   for (var rIdx = headers.headerRowIdx + 1; rIdx < rawValues.length; rIdx++) {
     var pName = rawValues[rIdx][headers.titleIdx];
     if (pName && pName.toString().trim()) {
-      prodToIndex[pName.toString().trim()] = rIdx;
+      var tName = pName.toString().trim();
+      prodToIndex[tName] = rIdx;
+      prodToIndex[tName.toLowerCase()] = rIdx;
+    }
+    var pId = rawValues[rIdx][headers.productIdIdx];
+    if (pId && pId.toString().trim()) {
+      var tId = pId.toString().trim();
+      prodIdToIndex[tId] = rIdx;
+      prodIdToIndex[tId.toLowerCase()] = rIdx;
+      prodIdToIndex[tId.replace(/^id-/, '')] = rIdx;
     }
   }
 
@@ -614,12 +624,21 @@ function deductInventoryFromRaw(ss, rows) {
     var incomingRow = rows[i];
     if (incomingRow.length < 6) continue;
     var incomingProdName = (incomingRow[1] || '').toString().trim();
+    var incomingProdId = (incomingRow[2] || '').toString().trim();
     var colD = incomingRow[3];
     var colF = incomingRow[5];
 
     var soldQty = safeParseNumber(colD) * safeParseNumber(colF);
-    if (incomingProdName && soldQty > 0) {
+    if ((incomingProdName || incomingProdId) && soldQty > 0) {
       var targetIndex = prodToIndex[incomingProdName];
+      if (targetIndex === undefined && incomingProdName) {
+        targetIndex = prodToIndex[incomingProdName.toLowerCase()];
+      }
+      if (targetIndex === undefined && incomingProdId) {
+        targetIndex = prodIdToIndex[incomingProdId] !== undefined
+          ? prodIdToIndex[incomingProdId]
+          : prodIdToIndex[incomingProdId.replace(/^id-/, '')];
+      }
       if (targetIndex !== undefined) {
         var rawRow = rawValues[targetIndex];
         var isUnlimited = rawRow[headers.unlimitedIdx] !== undefined &&
@@ -648,10 +667,20 @@ function replenishInventoryInRaw(ss, rows) {
   var headers = findRawSheetHeaders(rawValues);
 
   var prodToIndex = {};
+  var prodIdToIndex = {};
   for (var rIdx = headers.headerRowIdx + 1; rIdx < rawValues.length; rIdx++) {
     var pName = rawValues[rIdx][headers.titleIdx];
     if (pName && pName.toString().trim()) {
-      prodToIndex[pName.toString().trim()] = rIdx;
+      var tName = pName.toString().trim();
+      prodToIndex[tName] = rIdx;
+      prodToIndex[tName.toLowerCase()] = rIdx;
+    }
+    var pId = rawValues[rIdx][headers.productIdIdx];
+    if (pId && pId.toString().trim()) {
+      var tId = pId.toString().trim();
+      prodIdToIndex[tId] = rIdx;
+      prodIdToIndex[tId.toLowerCase()] = rIdx;
+      prodIdToIndex[tId.replace(/^id-/, '')] = rIdx;
     }
   }
 
@@ -659,12 +688,21 @@ function replenishInventoryInRaw(ss, rows) {
     var deletedRow = rows[i];
     if (deletedRow.length < 6) continue;
     var pName = (deletedRow[1] || '').toString().trim();
+    var pId = (deletedRow[2] || '').toString().trim();
     var colD = deletedRow[3];
     var colF = deletedRow[5];
 
     var returnQty = safeParseNumber(colD) * safeParseNumber(colF);
-    if (pName && returnQty > 0) {
+    if ((pName || pId) && returnQty > 0) {
       var targetIndex = prodToIndex[pName];
+      if (targetIndex === undefined && pName) {
+        targetIndex = prodToIndex[pName.toLowerCase()];
+      }
+      if (targetIndex === undefined && pId) {
+        targetIndex = prodIdToIndex[pId] !== undefined
+          ? prodIdToIndex[pId]
+          : prodIdToIndex[pId.replace(/^id-/, '')];
+      }
       if (targetIndex !== undefined) {
         var rawRow = rawValues[targetIndex];
         var isUnlimited = rawRow[headers.unlimitedIdx] !== undefined &&
@@ -688,6 +726,7 @@ function replenishInventoryInRaw(ss, rows) {
 function findRawSheetHeaders(rawValues) {
   var headerRowIdx = 0;
   var titleIdx = 2; // Default Col C
+  var productIdIdx = 1; // Default Col B
   var unlimitedIdx = 27; // Default Col AB
   var stockIdx = 28; // Default Col AC
 
@@ -706,7 +745,8 @@ function findRawSheetHeaders(rawValues) {
       for (var j = 0; j < row.length; j++) {
         var cellStr = (row[j] || '').toString().toLowerCase().trim();
         var normed = cellStr.replace(/[\s_-]/g, '');
-        if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
+        if (normed === 'productid' || cellStr === 'product id' || normed === 'sku') productIdIdx = j;
+        else if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
         else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) stockIdx = j;
       }
       break;
@@ -716,6 +756,7 @@ function findRawSheetHeaders(rawValues) {
   return {
     headerRowIdx: headerRowIdx,
     titleIdx: titleIdx,
+    productIdIdx: productIdIdx,
     unlimitedIdx: unlimitedIdx,
     stockIdx: stockIdx
   };

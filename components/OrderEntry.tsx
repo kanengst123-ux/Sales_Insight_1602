@@ -223,22 +223,11 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return customers.find(c => c.name === selectedCustomer);
   }, [customers, selectedCustomer]);
 
-  // Saved orders reservation (excluding the current editing order if any)
+  // Saved orders reservation: stock is deducted only upon pressing '入機'.
+  // Draft and held orders do not reduce available stock until '入機' is pressed.
   const otherOrdersReservedMap = useMemo(() => {
-    const map = new Map<string, number>();
-    if (savedOrders) {
-      savedOrders.forEach(order => {
-        // If the order has already had its inventory deducted in the Google Sheet raw tab
-        // (either keyed in, or held after keying in), do NOT double-deduct it in the client reservation calculation!
-        if (order.isKeyedIn || order.stockDeducted) return;
-        if (editingOrder && order.id === editingOrder.id) return;
-        order.items.forEach(item => {
-          map.set(item.name, (map.get(item.name) || 0) + item.quantity);
-        });
-      });
-    }
-    return map;
-  }, [savedOrders, editingOrder]);
+    return new Map<string, number>();
+  }, []);
 
   const reservedQtyMap = useMemo(() => {
     const map = new Map<string, number>(otherOrdersReservedMap);

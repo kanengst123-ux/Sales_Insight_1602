@@ -743,10 +743,8 @@ async function startServer() {
       current.isHeld = nextHeld;
       if (nextHeld) {
         current.isKeyedIn = false;
-        current.stockDeducted = current.stockDeducted ?? true;
-        if (!current.deductedItems && current.items) {
-          current.deductedItems = current.items.map((it: any) => ({ name: it.name, quantity: it.quantity }));
-        }
+        current.stockDeducted = false;
+        current.deductedItems = [];
       }
       current.updatedAt = Date.now();
       if (orderData && typeof orderData === "object") {
@@ -756,8 +754,8 @@ async function startServer() {
           id: orderId, 
           isHeld: nextHeld, 
           isKeyedIn: nextHeld ? false : (orderData.isKeyedIn !== undefined ? orderData.isKeyedIn : current.isKeyedIn), 
-          stockDeducted: orderData.stockDeducted !== undefined ? orderData.stockDeducted : current.stockDeducted,
-          deductedItems: orderData.deductedItems || current.deductedItems,
+          stockDeducted: orderData.stockDeducted !== undefined ? orderData.stockDeducted : (nextHeld ? false : current.stockDeducted),
+          deductedItems: orderData.deductedItems || (nextHeld ? [] : current.deductedItems),
           updatedAt: Date.now() 
         };
       }
@@ -772,8 +770,8 @@ async function startServer() {
         id: orderId,
         isHeld: nextHeld,
         isKeyedIn: nextHeld ? false : Boolean(base.isKeyedIn),
-        stockDeducted: base.stockDeducted !== undefined ? base.stockDeducted : true,
-        deductedItems: base.deductedItems || (base.items ? base.items.map((it: any) => ({ name: it.name, quantity: it.quantity })) : undefined),
+        stockDeducted: nextHeld ? false : (base.stockDeducted !== undefined ? base.stockDeducted : true),
+        deductedItems: nextHeld ? [] : (base.deductedItems || (base.items ? base.items.map((it: any) => ({ name: it.name, quantity: it.quantity })) : undefined)),
         updatedAt: Date.now()
       };
       orders.unshift(updatedOrder);
