@@ -250,14 +250,44 @@ const App: React.FC = () => {
       return;
     }
 
+    // Check if anything actually changed from the existing order
+    const hasOrderChanged = (orig: SavedOrder, updated: SavedOrder) => {
+      if ((orig.customerName || '').trim() !== (updated.customerName || '').trim()) return true;
+      if ((orig.remark || '').trim() !== (updated.remark || '').trim()) return true;
+      const origItems = orig.items || [];
+      const updatedItems = updated.items || [];
+      if (origItems.length !== updatedItems.length) return true;
+
+      const itemMap = new Map<string, number>();
+      origItems.forEach(it => {
+        itemMap.set(it.name.trim(), (itemMap.get(it.name.trim()) || 0) + it.quantity);
+      });
+      for (const it of updatedItems) {
+        const prevQ = itemMap.get(it.name.trim());
+        if (prevQ === undefined || prevQ !== it.quantity) return true;
+      }
+      return false;
+    };
+
+    const isExistingKeyedIn = Boolean(existingOrder?.isKeyedIn);
+    const orderChanged = existingOrder ? hasOrderChanged(existingOrder, order) : true;
+
+    // If an existing order was already keyed in and user made NO changes,
+    // it MUST stay as keyed in!
+    const nextKeyedIn = isExistingKeyedIn && !orderChanged;
+
+    if (!nextKeyedIn) {
+      recentlySubmittedOrderIds.delete(order.id);
+    } else {
+      recentlySubmittedOrderIds.add(order.id);
+    }
+
     // 1. Mark this order as actively created/saved so sync will never discard it
     activeSavedOrderIdsRef.current.add(order.id);
-    recentlySubmittedOrderIds.delete(order.id);
 
-    // Any saved or edited order becomes unkeyed pending new submission to Trade_log
     const orderToSave: SavedOrder = {
       ...order,
-      isKeyedIn: false,
+      isKeyedIn: nextKeyedIn,
       stockDeducted: order.stockDeducted !== undefined ? order.stockDeducted : existingOrder?.stockDeducted,
       deductedItems: order.deductedItems || existingOrder?.deductedItems,
       updatedAt: Date.now()
@@ -289,13 +319,13 @@ const App: React.FC = () => {
     setActiveTab('saved_orders');
 
     try {
-      await keyInServerOrder(orderToSave.id, false, {
+      await keyInServerOrder(orderToSave.id, nextKeyedIn, {
         stockDeducted: orderToSave.stockDeducted,
         deductedItems: orderToSave.deductedItems
       });
       await saveServerOrder(orderToSave);
     } catch (e) {
-      console.warn("Failed to sync new order to server:", e);
+      console.warn("Failed to sync order to server:", e);
     }
   };
 
@@ -306,28 +336,8 @@ const App: React.FC = () => {
       return;
     }
 
-    // When editing an already keyed-in order:
-    // Mark it as unkeyed immediately so the order list and server recognize it as unkeyed/being edited!
-    recentlySubmittedOrderIds.delete(order.id);
-    const unkeyedOrder: SavedOrder = {
-      ...order,
-      isKeyedIn: false,
-      stockDeducted: order.stockDeducted,
-      deductedItems: order.deductedItems,
-      updatedAt: Date.now()
-    };
-    setSavedOrders(prev => {
-      const next = prev.map(o => o.id === order.id ? unkeyedOrder : o);
-      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
-      return next;
-    });
-    keyInServerOrder(order.id, false, {
-      stockDeducted: order.stockDeducted,
-      deductedItems: order.deductedItems
-    }).catch(() => {});
-    saveServerOrder(unkeyedOrder).catch(() => {});
-
-    setEditingOrder(unkeyedOrder);
+    // Open order for editing without mutating isKeyedIn status in savedOrders
+    setEditingOrder(order);
     setActiveTab('order');
   };
 
@@ -435,6 +445,8 @@ const App: React.FC = () => {
     let allAlreadyDeductedWithNoChanges = true;
     const deltaRowsToDeduct: any[][] = [];
     const deltaRowsToReplenish: any[][] = [];
+    const localDeltaItemsToDeduct: { name: string; quantity: number }[] = [];
+    const localDeltaItemsToReplenish: { name: string; quantity: number }[] = [];
 
     orders.forEach(order => {
       if (!order.stockDeducted) {
@@ -451,17 +463,18 @@ const App: React.FC = () => {
             colF = parsed.outerQty;
           }
           deltaRowsToDeduct.push(["", it.name, "", colD, colE, colF]);
+          localDeltaItemsToDeduct.push({ name: it.name, quantity: it.quantity });
         });
       } else {
-        // Previously deducted (e.g. was keyed in, then '暫存' pressed, now keyed in again)
+        // Previously deducted (e.g. was keyed in, then modified or held)
         const prevMap = new Map<string, number>();
         (order.deductedItems || []).forEach(it => {
-          prevMap.set(it.name, (prevMap.get(it.name) || 0) + it.quantity);
+          prevMap.set(it.name.trim(), (prevMap.get(it.name.trim()) || 0) + it.quantity);
         });
 
         const currMap = new Map<string, number>();
         (order.items || []).forEach(it => {
-          currMap.set(it.name, (currMap.get(it.name) || 0) + it.quantity);
+          currMap.set(it.name.trim(), (currMap.get(it.name.trim()) || 0) + it.quantity);
         });
 
         const allKeys = new Set([...prevMap.keys(), ...currMap.keys()]);
@@ -471,10 +484,31 @@ const App: React.FC = () => {
           const diff = currQ - prevQ;
           if (diff > 0) {
             allAlreadyDeductedWithNoChanges = false;
-            deltaRowsToDeduct.push(["", pName, "", diff, "unit", 1]);
+            const parsed = parseProductPacking(pName);
+            let colD = diff;
+            let colE = "unit";
+            let colF = 1;
+            if (parsed && diff % parsed.outerQty === 0) {
+              colD = diff / parsed.outerQty;
+              colE = parsed.outerUnit;
+              colF = parsed.outerQty;
+            }
+            deltaRowsToDeduct.push(["", pName, "", colD, colE, colF]);
+            localDeltaItemsToDeduct.push({ name: pName, quantity: diff });
           } else if (diff < 0) {
             allAlreadyDeductedWithNoChanges = false;
-            deltaRowsToReplenish.push(["", pName, "", Math.abs(diff), "unit", 1]);
+            const absDiff = Math.abs(diff);
+            const parsed = parseProductPacking(pName);
+            let colD = absDiff;
+            let colE = "unit";
+            let colF = 1;
+            if (parsed && absDiff % parsed.outerQty === 0) {
+              colD = absDiff / parsed.outerQty;
+              colE = parsed.outerUnit;
+              colF = parsed.outerQty;
+            }
+            deltaRowsToReplenish.push(["", pName, "", colD, colE, colF]);
+            localDeltaItemsToReplenish.push({ name: pName, quantity: absDiff });
           }
         });
       }
@@ -484,15 +518,33 @@ const App: React.FC = () => {
     const anyPreviouslyDeducted = orders.some(o => o.stockDeducted);
 
     if (allAlreadyDeductedWithNoChanges && !anyBrandNew) {
-      return { skipStockDeduction: true, deltaRowsToDeduct: [], deltaRowsToReplenish: [] };
+      return { 
+        skipStockDeduction: true, 
+        deltaRowsToDeduct: [], 
+        deltaRowsToReplenish: [],
+        localDeltaItemsToDeduct: [],
+        localDeltaItemsToReplenish: []
+      };
     }
 
     if (anyPreviouslyDeducted) {
-      return { skipStockDeduction: false, deltaRowsToDeduct, deltaRowsToReplenish };
+      return { 
+        skipStockDeduction: false, 
+        deltaRowsToDeduct, 
+        deltaRowsToReplenish,
+        localDeltaItemsToDeduct,
+        localDeltaItemsToReplenish
+      };
     }
 
     // All are brand new orders
-    return { skipStockDeduction: false, deltaRowsToDeduct: [], deltaRowsToReplenish: [] };
+    return { 
+      skipStockDeduction: false, 
+      deltaRowsToDeduct: [], 
+      deltaRowsToReplenish: [],
+      localDeltaItemsToDeduct,
+      localDeltaItemsToReplenish
+    };
   };
 
   /**
@@ -548,8 +600,13 @@ const App: React.FC = () => {
       const targetSheet = isAdmin ? 'Trade_log_admin' : 'Trade_Log';
       const options = calculateStockAdjustment([existingOrder]);
 
-      // Deduct stock in React state and client cache immediately!
-      adjustLocalProductStock(existingOrder.items, 'deduct');
+      // Deduct ONLY delta stock in React state and client cache!
+      if (options.localDeltaItemsToDeduct && options.localDeltaItemsToDeduct.length > 0) {
+        adjustLocalProductStock(options.localDeltaItemsToDeduct, 'deduct');
+      }
+      if (options.localDeltaItemsToReplenish && options.localDeltaItemsToReplenish.length > 0) {
+        adjustLocalProductStock(options.localDeltaItemsToReplenish, 'replenish');
+      }
 
       const currentDeducted = existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity }));
       const updatedOrder: SavedOrder = {
@@ -584,8 +641,11 @@ const App: React.FC = () => {
       const wasKeyedIn = Boolean(existingOrder.isKeyedIn || existingOrder.stockDeducted);
 
       if (wasKeyedIn) {
-        // Replenish stock in React state and client cache immediately back to original level!
-        adjustLocalProductStock(existingOrder.items, 'replenish');
+        // Replenish stock in React state and client cache back to original level!
+        const itemsToReplenish = (existingOrder.deductedItems && existingOrder.deductedItems.length > 0)
+          ? existingOrder.deductedItems
+          : existingOrder.items;
+        adjustLocalProductStock(itemsToReplenish, 'replenish');
       }
 
       const updatedOrder: SavedOrder = {
@@ -847,13 +907,15 @@ const App: React.FC = () => {
       });
 
       let success = true;
+      let regOptions: any = null;
+      let adminOptions: any = null;
       if (regularRows.length > 0) {
-        const regOptions = calculateStockAdjustment(regularOrders);
+        regOptions = calculateStockAdjustment(regularOrders);
         const res = await writeTradeLogToSheet(regularRows, 'Trade_Log', regOptions);
         if (!res) success = false;
       }
       if (adminRows.length > 0) {
-        const adminOptions = calculateStockAdjustment(adminOrders);
+        adminOptions = calculateStockAdjustment(adminOrders);
         const res = await writeTradeLogToSheet(adminRows, 'Trade_log_admin', adminOptions);
         if (!res) success = false;
       }
@@ -861,9 +923,22 @@ const App: React.FC = () => {
         const keyedIds = ordersToKeyIn.map(o => o.id);
         keyedIds.forEach(id => recentlySubmittedOrderIds.add(id));
 
-        // Deduct products in React state and client cache immediately!
-        const allKeyedItems = ordersToKeyIn.flatMap(o => o.items || []);
-        adjustLocalProductStock(allKeyedItems, 'deduct');
+        // Deduct products in React state and client cache by delta only!
+        const allDeltaToDeduct = [
+          ...(regOptions?.localDeltaItemsToDeduct || []),
+          ...(adminOptions?.localDeltaItemsToDeduct || [])
+        ];
+        const allDeltaToReplenish = [
+          ...(regOptions?.localDeltaItemsToReplenish || []),
+          ...(adminOptions?.localDeltaItemsToReplenish || [])
+        ];
+
+        if (allDeltaToDeduct.length > 0) {
+          adjustLocalProductStock(allDeltaToDeduct, 'deduct');
+        }
+        if (allDeltaToReplenish.length > 0) {
+          adjustLocalProductStock(allDeltaToReplenish, 'replenish');
+        }
 
         const updatedOrdersList: SavedOrder[] = [];
         setSavedOrders(prev => {

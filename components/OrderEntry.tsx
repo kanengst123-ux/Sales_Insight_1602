@@ -434,8 +434,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
       salesName: editingOrder?.salesName || activeUserName,
       remark: remark,
       items: selectedItems,
-      isKeyedIn: false,
+      isKeyedIn: editingOrder?.isKeyedIn ?? false,
       isHeld: editingOrder?.isHeld ?? false,
+      stockDeducted: editingOrder?.stockDeducted,
+      deductedItems: editingOrder?.deductedItems,
       updatedAt: Date.now()
     };
     

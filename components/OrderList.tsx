@@ -506,15 +506,9 @@ const OrderList: React.FC<OrderListProps> = ({
                     <React.Fragment key={order.id}>
                       <tr 
                         onClick={(e) => {
-                          if (orderOwner) {
-                            onEditOrder(order);
-                          } else {
-                            toggleExpand(order.id, e);
-                          }
+                          toggleExpand(order.id, e);
                         }}
-                        className={`transition-colors group ${
-                          orderOwner ? 'cursor-pointer' : 'cursor-default'
-                        } ${
+                        className={`transition-colors group cursor-pointer ${
                           orderOwner && order.isHeld 
                             ? 'bg-amber-50/60 hover:bg-amber-100/60' 
                             : isExpanded 
@@ -535,7 +529,7 @@ const OrderList: React.FC<OrderListProps> = ({
                           <div className="flex flex-col gap-1.5">
                             <div className="flex items-center gap-2 flex-wrap">
                               <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                              <span className="text-sm font-black text-slate-900 leading-tight hover:text-blue-600 transition-colors">
+                              <span className="text-sm font-black text-slate-900 leading-tight">
                                 {order.customerName}
                               </span>
 
@@ -687,15 +681,9 @@ const OrderList: React.FC<OrderListProps> = ({
                       {order.remark && !isExpanded && (
                         <tr 
                           onClick={(e) => {
-                            if (orderOwner) {
-                              onEditOrder(order);
-                            } else {
-                              toggleExpand(order.id, e);
-                            }
+                            toggleExpand(order.id, e);
                           }}
-                          className={`border-t-0 bg-slate-50/30 ${
-                            orderOwner ? 'hover:bg-blue-50/40 cursor-pointer' : 'cursor-default'
-                          } transition-colors`}
+                          className={`border-t-0 bg-slate-50/30 hover:bg-blue-50/40 cursor-pointer transition-colors`}
                         >
                           <td />
                           <td colSpan={3} className="px-3 py-1.5 pb-3">
