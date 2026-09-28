@@ -215,13 +215,14 @@ async function startServer() {
   const fetchTradeLogOrdersFromServer = async (): Promise<any[]> => {
     const now = Date.now();
     const deletedSet = new Set(getDeletedOrderIds());
-    if (cachedTradeOrders.length > 0 && (now - lastTradeFetchTime) < 15000) {
+    if (cachedTradeOrders.length > 0 && (now - lastTradeFetchTime) < 2000) {
       return cachedTradeOrders.filter((o: any) => o && o.id && !deletedSet.has(o.id));
     }
 
     const fetchSheetCSV = async (gvizUrl: string, pubUrl: string): Promise<string> => {
       try {
-        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(5000) });
+        const gvizWithTime = gvizUrl.includes("?") ? `${gvizUrl}&t=${Date.now()}` : `${gvizUrl}?t=${Date.now()}`;
+        const res = await fetch(gvizWithTime, { signal: AbortSignal.timeout(5000) });
         if (res.ok) {
           const text = await res.text();
           if (text.length > 50) return text;

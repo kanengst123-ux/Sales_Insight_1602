@@ -51,12 +51,11 @@ const mergeOrderLists = (
     if (o && o.id && o.isHeld) heldOrderIds.add(o.id);
   }
 
-  // 1. Cloud orders come from 'Trade_log' & 'Trade_log_admin' tabs of 'Product_list'
+  // 1. Google Sheet Real-time Data (Trade_log & Trade_log_admin) has the HIGHEST PRIORITY!
+  // All confirmed keyed-in orders directly reflect what is in the sheet.
   for (const o of cloud) {
     if (o && o.id && !deletedIds.has(o.id)) {
-      // If the order was put on '暫存', it is being removed from Trade_log.
-      // Google Sheets CSV caching may take a few seconds to reflect row deletion,
-      // so we must NEVER allow stale cloud cache to unhold or key-in a held order!
+      // If the order was actively put on '暫存' on this device, it is being removed from Trade_log.
       if (heldOrderIds.has(o.id)) {
         continue;
       }
@@ -71,7 +70,7 @@ const mergeOrderLists = (
     }
   }
 
-  // Helper to merge or filter candidates from server or local
+  // 2. Merge local / server candidates (unkeyed drafts or held orders)
   const mergeCandidate = (o: SavedOrder) => {
     if (!o || !o.id || deletedIds.has(o.id)) return;
 
@@ -80,97 +79,59 @@ const mergeOrderLists = (
       return;
     }
 
-    if (map.has(o.id)) {
-      const existing = map.get(o.id)!;
-      // If candidate o has a newer updatedAt timestamp, or if existing has no updatedAt:
-      const candidateIsNewer = Boolean(
-        o.updatedAt && (!existing.updatedAt || o.updatedAt >= existing.updatedAt)
-      );
-
-      // Preferred items: if candidate is newer or has more complete items, take candidate items
-      const preferredItems = (candidateIsNewer && o.items && o.items.length > 0)
-        ? o.items
-        : ((o.items && o.items.length >= (existing.items?.length || 0)) ? o.items : (existing.items || []));
-
-      const preferredAmount = candidateIsNewer && o.orderAmount !== undefined
-        ? o.orderAmount
-        : (existing.orderAmount !== undefined ? existing.orderAmount : o.orderAmount);
-
-      const preferredRemark = candidateIsNewer && o.remark !== undefined
-        ? o.remark
-        : (o.remark || existing.remark);
-
-      // Determine hold status:
-      // If candidate or existing is held:
-      let isHeld = false;
-      if (candidateIsNewer && o.isHeld !== undefined) {
-        isHeld = o.isHeld;
-      } else {
-        isHeld = Boolean(o.isHeld || existing.isHeld);
+    // A. If the order already exists from Google Sheet (cloud):
+    if (validCloudIds.has(o.id)) {
+      // If locally marked as held:
+      if (o.isHeld) {
+        const existing = map.get(o.id)!;
+        map.set(o.id, {
+          ...existing,
+          isHeld: true,
+          isKeyedIn: false
+        });
       }
-
-      // Determine keyed in status:
-      // When an order is held, it MUST STAY as '未入機' (isKeyedIn: false)!
-      let isKeyedIn = false;
-      if (isHeld) {
-        isKeyedIn = false;
-      } else if (recentlySubmitted.has(o.id)) {
-        isKeyedIn = true;
-      } else if (o.isKeyedIn === false) {
-        isKeyedIn = false;
-      } else if (candidateIsNewer && o.isKeyedIn !== undefined) {
-        isKeyedIn = o.isKeyedIn;
-      } else {
-        isKeyedIn = Boolean(existing.isKeyedIn);
-      }
-
-      const stockDeducted = isHeld ? false : Boolean(
-        candidateIsNewer && o.stockDeducted !== undefined
-          ? o.stockDeducted
-          : (existing.stockDeducted || o.stockDeducted || existing.isKeyedIn || o.isKeyedIn)
-      );
-      const deductedItems = isHeld ? [] : ((candidateIsNewer && o.deductedItems)
-        ? o.deductedItems
-        : (existing.deductedItems || o.deductedItems || (stockDeducted ? (existing.items || o.items) : undefined)));
-
-      map.set(o.id, {
-        ...existing,
-        ...o,
-        items: preferredItems,
-        orderAmount: preferredAmount,
-        remark: preferredRemark,
-        isHeld,
-        isKeyedIn,
-        stockDeducted,
-        deductedItems,
-        updatedAt: Math.max(existing.updatedAt || 0, o.updatedAt || 0)
-      });
+      // Otherwise, Google Sheet data is the ABSOLUTE HIGHEST PRIORITY.
+      // Do NOT allow stale local/server items or quantities to overwrite Google Sheet!
       return;
     }
 
-    // If NOT in Trade_log / Trade_log_admin yet:
-    const isHeld = Boolean(o.isHeld);
-    let isKeyedIn = false;
-    if (isHeld) {
-      isKeyedIn = false;
-    } else if (recentlySubmitted.has(o.id)) {
-      isKeyedIn = true;
-    } else if (o.isKeyedIn === false) {
-      isKeyedIn = false;
-    } else {
-      isKeyedIn = Boolean(o.isKeyedIn);
+    // B. If NOT in Google Sheet:
+    // If Google Sheet was successfully loaded (cloud.length > 0) and this order was marked 'isKeyedIn',
+    // but does NOT exist in Google Sheet anymore, it was deleted in Google Sheet by another device!
+    // Do NOT resurrect it from stale local cache!
+    const isRecentlySubmitted = recentlySubmitted.has(o.id);
+    if (cloud.length > 0 && o.isKeyedIn && !o.isHeld && !isRecentlySubmitted) {
+      return; // Order was removed from Google Sheet; do not resurrect!
     }
 
-    const stockDeducted = isHeld ? false : Boolean(o.stockDeducted || o.isKeyedIn);
+    // C. Preserve unsubmitted drafts, held orders, or recently submitted orders
+    const isHeld = Boolean(o.isHeld);
+    const isKeyedIn = isHeld ? false : Boolean(isRecentlySubmitted || o.isKeyedIn);
+    const stockDeducted = isHeld ? false : Boolean(o.stockDeducted || isKeyedIn);
     const deductedItems = isHeld ? [] : (o.deductedItems || (stockDeducted && o.items ? o.items.map(it => ({ name: it.name, quantity: it.quantity })) : undefined));
 
-    map.set(o.id, {
-      ...o,
-      isHeld,
-      isKeyedIn,
-      stockDeducted,
-      deductedItems
-    });
+    if (map.has(o.id)) {
+      const existing = map.get(o.id)!;
+      const candidateIsNewer = Boolean(o.updatedAt && (!existing.updatedAt || o.updatedAt >= existing.updatedAt));
+      if (candidateIsNewer) {
+        map.set(o.id, {
+          ...existing,
+          ...o,
+          isHeld,
+          isKeyedIn,
+          stockDeducted,
+          deductedItems
+        });
+      }
+    } else {
+      map.set(o.id, {
+        ...o,
+        isHeld,
+        isKeyedIn,
+        stockDeducted,
+        deductedItems
+      });
+    }
   };
 
   for (const o of server) mergeCandidate(o);

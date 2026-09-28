@@ -1078,7 +1078,8 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
 
   const fetchCsvText = async (gvizUrl: string, pubUrl: string): Promise<string> => {
     try {
-      const res1 = await fetchWithTimeout(gvizUrl, { method: 'GET' }, 4000);
+      const gvizWithTime = gvizUrl.includes('?') ? `${gvizUrl}&t=${Date.now()}` : `${gvizUrl}?t=${Date.now()}`;
+      const res1 = await fetchWithTimeout(gvizWithTime, { method: 'GET' }, 4000);
       if (res1.ok) {
         const txt = await res1.text();
         if (txt.length > 50) return txt;
