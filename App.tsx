@@ -81,16 +81,26 @@ const mergeOrderLists = (
 
     // A. If the order already exists from Google Sheet (cloud):
     if (validCloudIds.has(o.id)) {
-      // If locally marked as held:
-      if (o.isHeld) {
+      // If locally/server marked as unkeyed or held (i.e. user modified the order or held it):
+      if (!o.isKeyedIn || o.isHeld) {
         const existing = map.get(o.id)!;
-        map.set(o.id, {
-          ...existing,
-          isHeld: true,
-          isKeyedIn: false
-        });
+        const candidateIsNewer = Boolean(
+          !existing.updatedAt || (o.updatedAt && o.updatedAt >= (existing.updatedAt || 0))
+        );
+        if (candidateIsNewer || !existing.updatedAt) {
+          map.set(o.id, {
+            ...existing,
+            ...o,
+            isHeld: Boolean(o.isHeld),
+            isKeyedIn: false,
+            stockDeducted: Boolean(o.stockDeducted ?? existing.stockDeducted),
+            deductedItems: o.deductedItems || existing.deductedItems,
+            updatedAt: o.updatedAt || Date.now()
+          });
+        }
+        return;
       }
-      // Otherwise, Google Sheet data is the ABSOLUTE HIGHEST PRIORITY.
+      // Otherwise, Google Sheet data is the ABSOLUTE HIGHEST PRIORITY for confirmed keyed-in orders.
       // Do NOT allow stale local/server items or quantities to overwrite Google Sheet!
       return;
     }
@@ -215,6 +225,7 @@ const App: React.FC = () => {
     const hasOrderChanged = (orig: SavedOrder, updated: SavedOrder) => {
       if ((orig.customerName || '').trim() !== (updated.customerName || '').trim()) return true;
       if ((orig.remark || '').trim() !== (updated.remark || '').trim()) return true;
+      if (Math.abs((orig.orderAmount || 0) - (updated.orderAmount || 0)) > 0.01) return true;
       const origItems = orig.items || [];
       const updatedItems = updated.items || [];
       if (origItems.length !== updatedItems.length) return true;
