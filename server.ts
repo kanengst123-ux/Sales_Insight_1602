@@ -628,6 +628,37 @@ async function startServer() {
     }
   });
 
+  // Strictly fetch Trade_log orders only (excluding Trade_log_admin and any local/saved drafts)
+  app.get("/api/trade-log-only", async (req, res) => {
+    try {
+      const gvizWithTime = `${GVIZ_TRADE_URL}&t=${Date.now()}`;
+      let csv = "";
+      try {
+        const r1 = await fetch(gvizWithTime, { signal: AbortSignal.timeout(5000) });
+        if (r1.ok) {
+          const txt = await r1.text();
+          if (txt.length > 50) csv = txt;
+        }
+      } catch {}
+
+      if (!csv) {
+        try {
+          const r2 = await fetch(`${PUB_TRADE_URL}&t=${Date.now()}`, { signal: AbortSignal.timeout(5000) });
+          if (r2.ok) csv = await r2.text();
+        } catch {}
+      }
+
+      if (csv) {
+        const orders = parseTradeSheetOrders(csv, "Sales");
+        res.json({ success: true, orders });
+        return;
+      }
+      res.json({ success: true, orders: [] });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String(err), orders: [] });
+    }
+  });
+
   // Get orders directly from Trade_log and Trade_log_admin tabs of Product_list
   app.get("/api/trade-orders", async (req, res) => {
     try {

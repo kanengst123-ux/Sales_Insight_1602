@@ -970,111 +970,124 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
     // Continue to direct Google Sheets fetch fallback
   }
 
-  const parseTradeLogRows = (csvText: string, defaultSales: string): SavedOrder[] => {
-    const rows = parseCSV(csvText);
-    if (rows.length < 2) return [];
+  return fetchCloudTradeLogOrdersFallback();
+};
 
-    const headerRow = rows[0].map(h => (h || '').toLowerCase().trim());
-    
-    let dateCol = headerRow.findIndex(h => h.includes('date') || h.includes('日期'));
-    if (dateCol === -1) dateCol = 0;
+export const parseTradeLogRows = (csvText: string, defaultSales: string): SavedOrder[] => {
+  const rows = parseCSV(csvText);
+  if (rows.length < 2) return [];
 
-    let itemCol = headerRow.findIndex(h => h === 'item' || h.includes('貨品') || h.includes('product'));
-    if (itemCol === -1) itemCol = 1;
+  const headerRow = rows[0].map(h => (h || '').toLowerCase().trim());
+  
+  let dateCol = headerRow.findIndex(h => h.includes('date') || h.includes('日期'));
+  if (dateCol === -1) dateCol = 0;
 
-    let qtyCol = headerRow.findIndex(h => h.includes('quantity') || h === 'qty' || h.includes('數量'));
-    if (qtyCol === -1) qtyCol = 3;
+  let itemCol = headerRow.findIndex(h => h === 'item' || h.includes('貨品') || h.includes('product'));
+  if (itemCol === -1) itemCol = 1;
 
-    let unitCol = headerRow.findIndex(h => h === 'unit' || h.includes('單位'));
-    if (unitCol === -1) unitCol = 4;
+  let qtyCol = headerRow.findIndex(h => h.includes('quantity') || h === 'qty' || h.includes('數量'));
+  if (qtyCol === -1) qtyCol = 3;
 
-    let refCol = headerRow.findIndex(h => h === 'ref');
-    if (refCol === -1) refCol = 5;
+  let unitCol = headerRow.findIndex(h => h === 'unit' || h.includes('單位'));
+  if (unitCol === -1) unitCol = 4;
 
-    let priceCol = headerRow.findIndex(h => h === 'price' || h.includes('單價'));
-    if (priceCol === -1) priceCol = 6;
+  let refCol = headerRow.findIndex(h => h === 'ref');
+  if (refCol === -1) refCol = 5;
 
-    let customerCol = headerRow.findIndex(h => h.includes('customer') || h.includes('客戶'));
-    if (customerCol === -1) customerCol = 7;
+  let priceCol = headerRow.findIndex(h => h === 'price' || h.includes('單價'));
+  if (priceCol === -1) priceCol = 6;
 
-    let subtotalCol = headerRow.findIndex(h => h.includes('subtotal') || h.includes('小計'));
-    if (subtotalCol === -1) subtotalCol = 9;
+  let customerCol = headerRow.findIndex(h => h.includes('customer') || h.includes('客戶'));
+  if (customerCol === -1) customerCol = 7;
 
-    let userCol = headerRow.findIndex(h => h === 'user' || h.includes('sales') || h.includes('用戶'));
-    if (userCol === -1) userCol = 10;
+  let subtotalCol = headerRow.findIndex(h => h.includes('subtotal') || h.includes('小計'));
+  if (subtotalCol === -1) subtotalCol = 9;
 
-    // Col 12 is 'ID' (Order ID like EVA00039), Col 2 is 'id' (product ID)
-    let idCol = 12;
-    if (headerRow[12] && (headerRow[12] === 'id' || headerRow[12].includes('order'))) {
-      idCol = 12;
+  let userCol = headerRow.findIndex(h => h === 'user' || h.includes('sales') || h.includes('用戶'));
+  if (userCol === -1) userCol = 10;
+
+  // Col 12 is 'ID' (Order ID like EVA00039), Col 2 is 'id' (product ID)
+  let idCol = 12;
+  if (headerRow[12] && (headerRow[12] === 'id' || headerRow[12].includes('order'))) {
+    idCol = 12;
+  } else {
+    const found = headerRow.findIndex((h, i) => i > 2 && (h === 'id' || h.includes('order')));
+    if (found !== -1) idCol = found;
+  }
+
+  let remarkCol = headerRow.findIndex(h => h.includes('remark') || h.includes('備註'));
+  if (remarkCol === -1) remarkCol = 13;
+
+  const orderMap = new Map<string, SavedOrder>();
+
+  for (let rIdx = 1; rIdx < rows.length; rIdx++) {
+    const row = rows[rIdx];
+    if (!row || row.length === 0) continue;
+
+    const orderId = (row[idCol] || row[12] || '').trim();
+    const customer = (row[customerCol] || row[7] || '').trim();
+    if (!orderId && !customer) continue;
+
+    const finalId = orderId || `TRADE-${rIdx}`;
+    const sales = (row[userCol] || row[10] || defaultSales || '').trim();
+    const date = (row[dateCol] || row[0] || '').trim();
+    const remark = (row[remarkCol] || row[13] || '').trim();
+
+    const rawQty = parseNum(row[qtyCol] || row[3]);
+    const unit = (row[unitCol] || row[4] || 'unit').trim();
+    const ref = parseNum(row[refCol] || row[5]) || 1;
+    const price = parseNum(row[priceCol] || row[6]);
+    const subtotal = parseNum(row[subtotalCol] || row[9]) || (rawQty * price);
+
+    const isOuterBox = unit.toLowerCase() === 'box' || unit.includes('箱') || unit.includes('盒') || unit.includes('條');
+    const totalUnits = isOuterBox && ref > 1 ? (rawQty * ref) : (rawQty || (price > 0 ? Math.round(subtotal / price) : 1));
+
+    const itemName = (row[itemCol] || row[1] || 'Item').trim();
+
+    const orderItem: OrderItem = {
+      id: `${finalId}-item-${rIdx}`,
+      name: itemName,
+      quantity: totalUnits,
+      price,
+      isOuterBox,
+      unitsPerBox: ref,
+      outerBoxUnit: unit
+    };
+
+    if (!orderMap.has(finalId)) {
+      orderMap.set(finalId, {
+        id: finalId,
+        customerName: customer,
+        salesName: sales,
+        date,
+        remark: remark === '.' ? '' : remark,
+        items: [orderItem],
+        orderAmount: subtotal,
+        isKeyedIn: true,
+        isHeld: false
+      });
     } else {
-      const found = headerRow.findIndex((h, i) => i > 2 && (h === 'id' || h.includes('order')));
-      if (found !== -1) idCol = found;
-    }
-
-    let remarkCol = headerRow.findIndex(h => h.includes('remark') || h.includes('備註'));
-    if (remarkCol === -1) remarkCol = 13;
-
-    const orderMap = new Map<string, SavedOrder>();
-
-    for (let rIdx = 1; rIdx < rows.length; rIdx++) {
-      const row = rows[rIdx];
-      if (!row || row.length === 0) continue;
-
-      const orderId = (row[idCol] || row[12] || '').trim();
-      const customer = (row[customerCol] || row[7] || '').trim();
-      if (!orderId && !customer) continue;
-
-      const finalId = orderId || `TRADE-${rIdx}`;
-      const sales = (row[userCol] || row[10] || defaultSales || '').trim();
-      const date = (row[dateCol] || row[0] || '').trim();
-      const remark = (row[remarkCol] || row[13] || '').trim();
-
-      const rawQty = parseNum(row[qtyCol] || row[3]);
-      const unit = (row[unitCol] || row[4] || 'unit').trim();
-      const ref = parseNum(row[refCol] || row[5]) || 1;
-      const price = parseNum(row[priceCol] || row[6]);
-      const subtotal = parseNum(row[subtotalCol] || row[9]) || (rawQty * price);
-
-      const isOuterBox = unit.toLowerCase() === 'box' || unit.includes('箱') || unit.includes('盒') || unit.includes('條');
-      const totalUnits = isOuterBox && ref > 1 ? (rawQty * ref) : (rawQty || (price > 0 ? Math.round(subtotal / price) : 1));
-
-      const itemName = (row[itemCol] || row[1] || 'Item').trim();
-
-      const orderItem: OrderItem = {
-        id: `${finalId}-item-${rIdx}`,
-        name: itemName,
-        quantity: totalUnits,
-        price,
-        isOuterBox,
-        unitsPerBox: ref,
-        outerBoxUnit: unit
-      };
-
-      if (!orderMap.has(finalId)) {
-        orderMap.set(finalId, {
-          id: finalId,
-          customerName: customer,
-          salesName: sales,
-          date,
-          remark: remark === '.' ? '' : remark,
-          items: [orderItem],
-          orderAmount: subtotal,
-          isKeyedIn: true,
-          isHeld: false
-        });
-      } else {
-        const existing = orderMap.get(finalId)!;
-        existing.items.push(orderItem);
-        existing.orderAmount += subtotal;
-        if (!existing.remark && remark && remark !== '.') {
-          existing.remark = remark;
-        }
+      const existing = orderMap.get(finalId)!;
+      existing.items.push(orderItem);
+      existing.orderAmount += subtotal;
+      if (!existing.remark && remark && remark !== '.') {
+        existing.remark = remark;
       }
     }
+  }
 
-    return Array.from(orderMap.values());
-  };
+  return Array.from(orderMap.values());
+};
+
+const fetchCloudTradeLogOrdersFallback = async (): Promise<SavedOrder[]> => {
+  let localDeletedSet = new Set<string>();
+  try {
+    const stored = localStorage.getItem('ws_deleted_order_ids');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) parsed.forEach(id => localDeletedSet.add(id));
+    }
+  } catch {}
 
   const fetchCsvText = async (gvizUrl: string, pubUrl: string): Promise<string> => {
     try {
@@ -1117,6 +1130,46 @@ export const fetchCloudTradeLogOrders = async (): Promise<SavedOrder[]> => {
       return cached.filter(o => o && o.id && !localDeletedSet.has(o.id));
     }
   } catch (e) {}
+
+  return [];
+};
+
+/**
+ * Strictly loads all the info in the 'Trade_log' tab of the Google Sheet only.
+ * Completely ignores 'Trade_log_admin', local drafts, unkeyed orders, and held orders.
+ */
+export const fetchStrictTradeLogOrders = async (): Promise<SavedOrder[]> => {
+  // 1. First priority: try backend endpoint that strictly fetches Trade_log
+  try {
+    const apiRes = await fetchWithTimeout(`/api/trade-log-only?t=${Date.now()}`, { method: 'GET' }, 5000);
+    if (apiRes.ok) {
+      const json = await apiRes.json();
+      if (json && json.success && Array.isArray(json.orders)) {
+        return json.orders;
+      }
+    }
+  } catch {}
+
+  const gvizUrl = `${TRADE_LOG_GVIZ_URL}&t=${Date.now()}`;
+  const pubUrl = `${TRADE_LOG_CSV_URL}&t=${Date.now()}`;
+
+  // 2. Direct GVIZ fetch
+  try {
+    const res1 = await fetchWithTimeout(gvizUrl, { method: 'GET' }, 5000);
+    if (res1.ok) {
+      const txt = await res1.text();
+      if (txt.length > 50) return parseTradeLogRows(txt, 'Sales');
+    }
+  } catch {}
+
+  // 3. Direct Published CSV fetch
+  try {
+    const res2 = await fetchWithTimeout(pubUrl, { method: 'GET' }, 5000);
+    if (res2.ok) {
+      const txt = await res2.text();
+      if (txt.length > 50) return parseTradeLogRows(txt, 'Sales');
+    }
+  } catch {}
 
   return [];
 };

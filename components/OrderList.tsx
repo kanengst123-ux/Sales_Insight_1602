@@ -18,9 +18,11 @@ import {
   Package, 
   CheckCircle2, 
   Clock,
-  Pencil
+  Pencil,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { fetchStrictTradeLogOrders } from '../services/dataService';
 
 interface OrderListProps {
   orders: SavedOrder[];
@@ -62,24 +64,54 @@ const OrderList: React.FC<OrderListProps> = ({
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   const [showAll, setShowAll] = useState(false);
+  const [strictTradeOrders, setStrictTradeOrders] = useState<SavedOrder[] | null>(null);
+  const [isLoadingTradeLog, setIsLoadingTradeLog] = useState<boolean>(false);
 
   // Checks whether the current user is the owner of an order
   const isOwner = (order: SavedOrder) => isOrderOwner(order, currentRole);
 
-  // Extract unique sales names from orders
-  const uniqueSalesReps = useMemo(() => {
-    const set = new Set<string>();
-    orders.forEach(o => {
-      if (o.salesName && o.salesName.trim()) {
-        set.add(o.salesName.trim());
-      }
-    });
-    APP_USERS.forEach(u => set.add(u));
-    return Array.from(set).sort();
-  }, [orders]);
+  // When '全部Sales' toggle button is pressed: clear info and strictly load 'Trade_log' tab
+  const handleToggleAllSales = async () => {
+    setShowAll(true);
+    // Immediately clear all info in the order list tab
+    setStrictTradeOrders([]);
+    setIsLoadingTradeLog(true);
+    setStatusMessage(null);
+    try {
+      const loaded = await fetchStrictTradeLogOrders();
+      setStrictTradeOrders(loaded);
+      setStatusMessage({ 
+        text: `已成功載入 Google Sheet 'Trade_log' 共 ${loaded.length} 筆訂單！`, 
+        type: 'success' 
+      });
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch (err) {
+      console.error("Error loading Trade_log:", err);
+      setStatusMessage({ 
+        text: '載入 Trade_log 失敗，請重試。', 
+        type: 'error' 
+      });
+      setTimeout(() => setStatusMessage(null), 4000);
+    } finally {
+      setIsLoadingTradeLog(false);
+    }
+  };
+
+  const handleToggleSelf = () => {
+    setShowAll(false);
+    setStrictTradeOrders(null);
+    setIsLoadingTradeLog(false);
+    if (onRefreshOrders) {
+      onRefreshOrders();
+    }
+  };
 
   // Handle manual refresh
   const handleRefresh = async () => {
+    if (showAll) {
+      await handleToggleAllSales();
+      return;
+    }
     if (!onRefreshOrders || isRefreshing) return;
     setIsRefreshing(true);
     try {
@@ -94,13 +126,33 @@ const OrderList: React.FC<OrderListProps> = ({
     }
   };
 
+  // Base orders: if in showAll mode, strictly use the loaded Trade_log orders
+  const baseOrders = useMemo(() => {
+    if (showAll && strictTradeOrders !== null) {
+      return strictTradeOrders;
+    }
+    return orders;
+  }, [showAll, strictTradeOrders, orders]);
+
+  // Extract unique sales names from orders
+  const uniqueSalesReps = useMemo(() => {
+    const set = new Set<string>();
+    baseOrders.forEach(o => {
+      if (o.salesName && o.salesName.trim()) {
+        set.add(o.salesName.trim());
+      }
+    });
+    APP_USERS.forEach(u => set.add(u));
+    return Array.from(set).sort();
+  }, [baseOrders]);
+
   // Base role-filtered orders: only show current role unless showAll is toggled
   const roleFilteredOrders = useMemo(() => {
     if (!showAll && currentRole) {
-      return orders.filter(o => isOwner(o));
+      return baseOrders.filter(o => isOwner(o));
     }
-    return orders;
-  }, [orders, currentRole, showAll]);
+    return baseOrders;
+  }, [baseOrders, currentRole, showAll]);
 
   // Counts for tabs
   const counts = useMemo(() => {
@@ -192,8 +244,13 @@ const OrderList: React.FC<OrderListProps> = ({
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="text-sm sm:text-base font-black text-slate-800 tracking-tight">
-                {showAll ? '全部用戶的訂單記錄' : `${currentRole || '未登入'} 的個人訂單`}
+                {showAll ? '全部Sales的訂單記錄' : `${currentRole || '未登入'} 的個人訂單`}
               </h3>
+              {showAll && strictTradeOrders !== null && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                  Google Sheet Trade_log 純即時分頁
+                </span>
+              )}
             </div>
 
             {/* Role Switcher */}
@@ -216,7 +273,7 @@ const OrderList: React.FC<OrderListProps> = ({
               <div className="inline-flex p-0.5 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-bold shadow-inner">
                 <button
                   type="button"
-                  onClick={() => setShowAll(false)}
+                  onClick={handleToggleSelf}
                   className={`flex items-center gap-1 px-3 py-1 rounded-full transition-all duration-200 ${
                     !showAll
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black'
@@ -228,15 +285,20 @@ const OrderList: React.FC<OrderListProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAll(true)}
+                  onClick={handleToggleAllSales}
+                  disabled={isLoadingTradeLog}
                   className={`flex items-center gap-1 px-3 py-1 rounded-full transition-all duration-200 ${
                     showAll
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black'
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  <Users className="w-3 h-3" />
-                  全部用戶
+                  {isLoadingTradeLog ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-white" />
+                  ) : (
+                    <Users className="w-3 h-3" />
+                  )}
+                  全部Sales
                 </button>
               </div>
             )}
@@ -475,7 +537,19 @@ const OrderList: React.FC<OrderListProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginatedOrders.length === 0 ? (
+              {isLoadingTradeLog ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-20 text-center text-slate-500 font-medium">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <Loader2 className="w-9 h-9 animate-spin text-blue-600" />
+                      <div>
+                        <p className="text-slate-800 font-black text-sm">已清除訂單列表，正在從 Google Sheet 載入 'Trade_log'...</p>
+                        <p className="text-xs text-slate-400 mt-1">僅嚴格載入試算表中的 Trade_log 即時資料，請稍候</p>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-16 text-center text-slate-400 font-medium">
                     <div className="flex flex-col items-center gap-3">
