@@ -605,7 +605,6 @@ function handleRevertStockForOrders(orderIds) {
 
 /**
  * Deduct inventory quantities from 'raw' sheet based on trade log rows.
- * Explicitly targets Col AC (header as 'Stock', column 29) of 'raw' tab.
  */
 function deductInventoryFromRaw(ss, rows) {
   var rawSheet = ss.getSheetByName('raw');
@@ -613,9 +612,6 @@ function deductInventoryFromRaw(ss, rows) {
 
   var rawValues = rawSheet.getDataRange().getValues();
   var headers = findRawSheetHeaders(rawValues);
-
-  // Guarantee Col AC (1-based column 29, 0-indexed 28)
-  var stockColIndex = headers.stockIdx !== undefined ? headers.stockIdx : 28;
 
   var prodToIndex = {};
   var prodIdToIndex = {};
@@ -625,8 +621,6 @@ function deductInventoryFromRaw(ss, rows) {
       var tName = pName.toString().trim();
       prodToIndex[tName] = rIdx;
       prodToIndex[tName.toLowerCase()] = rIdx;
-      prodToIndex[tName.replace(/[\s\u3000]/g, '').toLowerCase()] = rIdx;
-      prodToIndex[tName.replace(/[（(]/g, '(').replace(/[）)]/g, ')').toLowerCase()] = rIdx;
     }
     var pId = rawValues[rIdx][headers.productIdIdx];
     if (pId && pId.toString().trim()) {
@@ -651,12 +645,6 @@ function deductInventoryFromRaw(ss, rows) {
       if (targetIndex === undefined && incomingProdName) {
         targetIndex = prodToIndex[incomingProdName.toLowerCase()];
       }
-      if (targetIndex === undefined && incomingProdName) {
-        targetIndex = prodToIndex[incomingProdName.replace(/[\s\u3000]/g, '').toLowerCase()];
-      }
-      if (targetIndex === undefined && incomingProdName) {
-        targetIndex = prodToIndex[incomingProdName.replace(/[（(]/g, '(').replace(/[）)]/g, ')').toLowerCase()];
-      }
       if (targetIndex === undefined && incomingProdId) {
         targetIndex = prodIdToIndex[incomingProdId] !== undefined
           ? prodIdToIndex[incomingProdId]
@@ -668,24 +656,19 @@ function deductInventoryFromRaw(ss, rows) {
                           rawRow[headers.unlimitedIdx] !== null &&
                           rawRow[headers.unlimitedIdx].toString().trim() === '1';
 
-        var currentStockVal = rawRow[stockColIndex];
-        var hasNumericStock = currentStockVal !== '' && currentStockVal !== undefined && currentStockVal !== null && !isNaN(parseFloat(currentStockVal));
-        if (!isUnlimited || hasNumericStock) {
-          var currentStock = safeParseNumber(currentStockVal);
+        if (!isUnlimited) {
+          var currentStock = safeParseNumber(rawRow[headers.stockIdx]);
           var newStock = currentStock - soldQty;
-          rawValues[targetIndex][stockColIndex] = newStock;
-          // Col AC is Column 29 (1-based: stockColIndex + 1)
-          rawSheet.getRange(targetIndex + 1, stockColIndex + 1).setValue(newStock);
+          rawValues[targetIndex][headers.stockIdx] = newStock;
+          rawSheet.getRange(targetIndex + 1, headers.stockIdx + 1).setValue(newStock);
         }
       }
     }
   }
-  SpreadsheetApp.flush();
 }
 
 /**
  * Replenish inventory quantities to 'raw' sheet based on deleted/reverted rows.
- * Explicitly targets Col AC (header as 'Stock', column 29) of 'raw' tab.
  */
 function replenishInventoryInRaw(ss, rows) {
   var rawSheet = ss.getSheetByName('raw');
@@ -693,9 +676,6 @@ function replenishInventoryInRaw(ss, rows) {
 
   var rawValues = rawSheet.getDataRange().getValues();
   var headers = findRawSheetHeaders(rawValues);
-
-  // Guarantee Col AC (1-based column 29, 0-indexed 28)
-  var stockColIndex = headers.stockIdx !== undefined ? headers.stockIdx : 28;
 
   var prodToIndex = {};
   var prodIdToIndex = {};
@@ -705,8 +685,6 @@ function replenishInventoryInRaw(ss, rows) {
       var tName = pName.toString().trim();
       prodToIndex[tName] = rIdx;
       prodToIndex[tName.toLowerCase()] = rIdx;
-      prodToIndex[tName.replace(/[\s\u3000]/g, '').toLowerCase()] = rIdx;
-      prodToIndex[tName.replace(/[（(]/g, '(').replace(/[）)]/g, ')').toLowerCase()] = rIdx;
     }
     var pId = rawValues[rIdx][headers.productIdIdx];
     if (pId && pId.toString().trim()) {
@@ -731,12 +709,6 @@ function replenishInventoryInRaw(ss, rows) {
       if (targetIndex === undefined && pName) {
         targetIndex = prodToIndex[pName.toLowerCase()];
       }
-      if (targetIndex === undefined && pName) {
-        targetIndex = prodToIndex[pName.replace(/[\s\u3000]/g, '').toLowerCase()];
-      }
-      if (targetIndex === undefined && pName) {
-        targetIndex = prodToIndex[pName.replace(/[（(]/g, '(').replace(/[）)]/g, ')').toLowerCase()];
-      }
       if (targetIndex === undefined && pId) {
         targetIndex = prodIdToIndex[pId] !== undefined
           ? prodIdToIndex[pId]
@@ -748,59 +720,45 @@ function replenishInventoryInRaw(ss, rows) {
                           rawRow[headers.unlimitedIdx] !== null &&
                           rawRow[headers.unlimitedIdx].toString().trim() === '1';
 
-        var currentStockVal = rawRow[stockColIndex];
-        var hasNumericStock = currentStockVal !== '' && currentStockVal !== undefined && currentStockVal !== null && !isNaN(parseFloat(currentStockVal));
-        if (!isUnlimited || hasNumericStock) {
-          var currentStock = safeParseNumber(currentStockVal);
+        if (!isUnlimited) {
+          var currentStock = safeParseNumber(rawRow[headers.stockIdx]);
           var newStock = currentStock + returnQty;
-          rawValues[targetIndex][stockColIndex] = newStock;
-          // Col AC is Column 29 (1-based: stockColIndex + 1)
-          rawSheet.getRange(targetIndex + 1, stockColIndex + 1).setValue(newStock);
+          rawValues[targetIndex][headers.stockIdx] = newStock;
+          rawSheet.getRange(targetIndex + 1, headers.stockIdx + 1).setValue(newStock);
         }
       }
     }
   }
-  SpreadsheetApp.flush();
 }
 
 /**
  * Locate header column indices in 'raw' sheet dynamically with robust fallbacks.
- * Specifically guarantees Col AC (0-indexed 28, column 29) with header 'Stock'.
  */
 function findRawSheetHeaders(rawValues) {
   var headerRowIdx = 0;
   var titleIdx = 2; // Default Col C
   var productIdIdx = 1; // Default Col B
-  var unlimitedIdx = 27; // Default Col AB (Column 28)
-  var stockIdx = 28; // Default Col AC (Column 29, header 'Stock')
+  var unlimitedIdx = 27; // Default Col AB
+  var stockIdx = 28; // Default Col AC
 
   for (var i = 0; i < Math.min(rawValues.length, 10); i++) {
     var row = rawValues[i];
-    var isHeaderRow = false;
+    var foundIdx = -1;
     for (var j = 0; j < row.length; j++) {
-      var cell = (row[j] || '').toString().toLowerCase().trim();
-      var normed = cell.replace(/[\s_-]/g, '');
-      if (cell === 'title' || normed === 'productid' || normed === 'stock' || cell === 'sku') {
-        isHeaderRow = true;
+      if (row[j] && row[j].toString().toLowerCase().trim() === 'title') {
+        foundIdx = j;
         break;
       }
     }
-    if (isHeaderRow) {
+    if (foundIdx !== -1) {
       headerRowIdx = i;
+      titleIdx = foundIdx;
       for (var j = 0; j < row.length; j++) {
         var cellStr = (row[j] || '').toString().toLowerCase().trim();
         var normed = cellStr.replace(/[\s_-]/g, '');
-        if (cellStr === 'title' || cellStr === 'name' || cellStr === '貨品名稱' || cellStr === '產品名稱') titleIdx = j;
-        else if (normed === 'productid' || cellStr === 'product id' || normed === 'sku') productIdIdx = j;
-        else if (normed === 'unlimitedstock' || normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
-        else if (normed === 'stock' || cellStr === 'stock') stockIdx = j;
-      }
-      // If Col AC (0-indexed 28, Column 29) header contains 'stock', strictly lock stockIdx to 28
-      if (row.length > 28) {
-        var colACCell = (row[28] || '').toString().toLowerCase().trim().replace(/[\s_-]/g, '');
-        if (colACCell === 'stock') {
-          stockIdx = 28;
-        }
+        if (normed === 'productid' || cellStr === 'product id' || normed === 'sku') productIdIdx = j;
+        else if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
+        else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) stockIdx = j;
       }
       break;
     }
