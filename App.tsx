@@ -257,11 +257,22 @@ const App: React.FC = () => {
     // 1. Mark this order as actively created/saved so sync will never discard it
     activeSavedOrderIdsRef.current.add(order.id);
 
+    const wasDeducted = Boolean(
+      order.stockDeducted !== undefined ? order.stockDeducted : (existingOrder?.stockDeducted || existingOrder?.isKeyedIn)
+    );
+    const baselineDeducted = (existingOrder?.deductedItems && existingOrder.deductedItems.length > 0)
+      ? existingOrder.deductedItems
+      : (order.deductedItems && order.deductedItems.length > 0
+        ? order.deductedItems
+        : (wasDeducted && existingOrder?.items
+          ? existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity }))
+          : undefined));
+
     const orderToSave: SavedOrder = {
       ...order,
       isKeyedIn: nextKeyedIn,
-      stockDeducted: order.stockDeducted !== undefined ? order.stockDeducted : existingOrder?.stockDeducted,
-      deductedItems: order.deductedItems || existingOrder?.deductedItems,
+      stockDeducted: wasDeducted,
+      deductedItems: baselineDeducted,
       updatedAt: Date.now()
     };
 
@@ -308,8 +319,19 @@ const App: React.FC = () => {
       return;
     }
 
+    const wasDeducted = Boolean(order.stockDeducted || order.isKeyedIn);
+    const orderToEdit: SavedOrder = {
+      ...order,
+      stockDeducted: wasDeducted,
+      deductedItems: (order.deductedItems && order.deductedItems.length > 0)
+        ? order.deductedItems
+        : (wasDeducted && order.items
+          ? order.items.map(it => ({ name: it.name, quantity: it.quantity }))
+          : undefined)
+    };
+
     // Open order for editing without mutating isKeyedIn status in savedOrders
-    setEditingOrder(order);
+    setEditingOrder(orderToEdit);
     setActiveTab('order');
   };
 
@@ -439,8 +461,12 @@ const App: React.FC = () => {
         });
       } else {
         // Previously deducted (e.g. was keyed in, then modified or held)
+        const prevItems = (order.deductedItems && order.deductedItems.length > 0)
+          ? order.deductedItems
+          : (order.items || []);
+
         const prevMap = new Map<string, number>();
-        (order.deductedItems || []).forEach(it => {
+        prevItems.forEach(it => {
           prevMap.set(it.name.trim(), (prevMap.get(it.name.trim()) || 0) + it.quantity);
         });
 

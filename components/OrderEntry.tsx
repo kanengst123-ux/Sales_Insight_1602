@@ -229,27 +229,66 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     return new Map<string, number>();
   }, []);
 
-  const reservedQtyMap = useMemo(() => {
-    const map = new Map<string, number>(otherOrdersReservedMap);
-    selectedItems.forEach(item => {
-      map.set(item.name, (map.get(item.name) || 0) + item.quantity);
+  // When editing an order that already had its stock deducted (keyed-in order),
+  // those quantities were ALREADY subtracted from product.stock!
+  // We track the baseline deducted quantities so only the NET delta (new - original) affects available stock.
+  const editingOrderDeductedMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!editingOrder) return map;
+    const wasDeducted = Boolean(editingOrder.stockDeducted || editingOrder.isKeyedIn);
+    if (!wasDeducted) return map;
+
+    const sourceItems = (editingOrder.deductedItems && editingOrder.deductedItems.length > 0)
+      ? editingOrder.deductedItems
+      : (editingOrder.items || []);
+
+    sourceItems.forEach(it => {
+      if (it && it.name) {
+        const norm = it.name.trim();
+        map.set(norm, (map.get(norm) || 0) + (Number(it.quantity) || 0));
+      }
     });
     return map;
-  }, [otherOrdersReservedMap, selectedItems]);
+  }, [editingOrder]);
+
+  const reservedQtyMap = useMemo(() => {
+    const map = new Map<string, number>(otherOrdersReservedMap);
+    // For selected items: only subtract the net difference beyond what was already deducted
+    selectedItems.forEach(item => {
+      const norm = item.name.trim();
+      const currentQty = Number(item.quantity) || 0;
+      const alreadyDeducted = editingOrderDeductedMap.get(norm) || 0;
+      const netChange = currentQty - alreadyDeducted;
+      map.set(norm, (map.get(norm) || 0) + netChange);
+    });
+
+    // If an item was in the original deducted order but completely removed during edit,
+    // its original deducted quantity is freed up and returned to available stock
+    editingOrderDeductedMap.forEach((origQty, pName) => {
+      if (!selectedItems.some(it => it.name.trim() === pName)) {
+        map.set(pName, (map.get(pName) || 0) - origQty);
+      }
+    });
+
+    return map;
+  }, [otherOrdersReservedMap, selectedItems, editingOrderDeductedMap]);
 
   const getRemainingStock = useCallback((product: Product) => {
     if (product.unlimitedStock) return Infinity;
+    const normName = product.name.trim();
     const baseStock = product.stock ?? 0;
-    const reducedQty = reservedQtyMap.get(product.name) || 0;
+    const reducedQty = reservedQtyMap.get(normName) || 0;
     return baseStock - reducedQty;
   }, [reservedQtyMap]);
 
   const getMaxStockForOrder = useCallback((productName: string) => {
-    const prod = products.find(p => p.name === productName);
+    const norm = productName.trim();
+    const prod = products.find(p => p.name.trim() === norm);
     if (!prod || prod.unlimitedStock) return Infinity;
-    const reservedByOthers = otherOrdersReservedMap.get(productName) || 0;
-    return (prod.stock ?? 0) - reservedByOthers;
-  }, [products, otherOrdersReservedMap]);
+    const reservedByOthers = otherOrdersReservedMap.get(norm) || 0;
+    const alreadyDeducted = editingOrderDeductedMap.get(norm) || 0;
+    return (prod.stock ?? 0) + alreadyDeducted - reservedByOthers;
+  }, [products, otherOrdersReservedMap, editingOrderDeductedMap]);
 
   const totalOrderAmount = useMemo(() => {
     return selectedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
