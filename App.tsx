@@ -244,16 +244,6 @@ const App: React.FC = () => {
     const isExistingKeyedIn = Boolean(existingOrder?.isKeyedIn);
     const orderChanged = existingOrder ? hasOrderChanged(existingOrder, order) : true;
 
-    // If an existing order was already keyed in and user made NO changes,
-    // it MUST stay as keyed in!
-    const nextKeyedIn = isExistingKeyedIn && !orderChanged;
-
-    if (!nextKeyedIn) {
-      recentlySubmittedOrderIds.delete(order.id);
-    } else {
-      recentlySubmittedOrderIds.add(order.id);
-    }
-
     // 1. Mark this order as actively created/saved so sync will never discard it
     activeSavedOrderIdsRef.current.add(order.id);
 
@@ -268,11 +258,55 @@ const App: React.FC = () => {
           ? existingOrder.items.map(it => ({ name: it.name, quantity: it.quantity }))
           : undefined));
 
+    const currentItems = order.items.map(it => ({ name: it.name, quantity: it.quantity }));
+
+    let nextKeyedIn = isExistingKeyedIn;
+    let nextStockDeducted = wasDeducted;
+    let nextDeductedItems = baselineDeducted;
+
+    // If an existing order was already keyed in (in Trade_log and stock was deducted in Col AC):
+    if (isExistingKeyedIn && orderChanged) {
+      // Calculate delta adjustment between the baseline deducted quantities and the new quantities
+      const tempOrderForDelta: SavedOrder = {
+        ...order,
+        stockDeducted: true,
+        deductedItems: baselineDeducted,
+        items: order.items
+      };
+      const deltaOptions = calculateStockAdjustment([tempOrderForDelta]);
+
+      // Immediately adjust local React state stock so UI reflects reverting or deducting
+      if (deltaOptions.localDeltaItemsToDeduct && deltaOptions.localDeltaItemsToDeduct.length > 0) {
+        adjustLocalProductStock(deltaOptions.localDeltaItemsToDeduct, 'deduct');
+      }
+      if (deltaOptions.localDeltaItemsToReplenish && deltaOptions.localDeltaItemsToReplenish.length > 0) {
+        adjustLocalProductStock(deltaOptions.localDeltaItemsToReplenish, 'replenish');
+      }
+
+      nextKeyedIn = true;
+      nextStockDeducted = true;
+      nextDeductedItems = currentItems;
+      recentlySubmittedOrderIds.add(order.id);
+
+      // Immediately update Google Sheet Trade_log & Col AC (header 'Stock') of 'raw' tab!
+      const rows = buildFullTradeRows(order);
+      const isAdmin = order.salesName?.trim().toLowerCase() === 'admin';
+      const targetSheet = isAdmin ? 'Trade_log_admin' : 'Trade_Log';
+      writeTradeLogToSheet(rows, targetSheet, deltaOptions).catch(err => {
+        console.error('Error syncing modified order to Google Sheet:', err);
+      });
+    } else if (!isExistingKeyedIn) {
+      nextKeyedIn = false;
+      recentlySubmittedOrderIds.delete(order.id);
+    } else {
+      recentlySubmittedOrderIds.add(order.id);
+    }
+
     const orderToSave: SavedOrder = {
       ...order,
       isKeyedIn: nextKeyedIn,
-      stockDeducted: wasDeducted,
-      deductedItems: baselineDeducted,
+      stockDeducted: nextStockDeducted,
+      deductedItems: nextDeductedItems,
       updatedAt: Date.now()
     };
 
@@ -456,7 +490,9 @@ const App: React.FC = () => {
             colE = parsed.outerUnit;
             colF = parsed.outerQty;
           }
-          deltaRowsToDeduct.push(["", it.name, "", colD, colE, colF]);
+          const matchedProd = products.find(p => p.name.trim() === it.name.trim());
+          const prodId = matchedProd?.id || "";
+          deltaRowsToDeduct.push(["", it.name, prodId, colD, colE, colF]);
           localDeltaItemsToDeduct.push({ name: it.name, quantity: it.quantity });
         });
       } else {
@@ -480,6 +516,9 @@ const App: React.FC = () => {
           const prevQ = prevMap.get(pName) || 0;
           const currQ = currMap.get(pName) || 0;
           const diff = currQ - prevQ;
+          const matchedProd = products.find(p => p.name.trim() === pName.trim());
+          const prodId = matchedProd?.id || "";
+
           if (diff > 0) {
             allAlreadyDeductedWithNoChanges = false;
             const parsed = parseProductPacking(pName);
@@ -491,7 +530,7 @@ const App: React.FC = () => {
               colE = parsed.outerUnit;
               colF = parsed.outerQty;
             }
-            deltaRowsToDeduct.push(["", pName, "", colD, colE, colF]);
+            deltaRowsToDeduct.push(["", pName, prodId, colD, colE, colF]);
             localDeltaItemsToDeduct.push({ name: pName, quantity: diff });
           } else if (diff < 0) {
             allAlreadyDeductedWithNoChanges = false;
@@ -505,7 +544,7 @@ const App: React.FC = () => {
               colE = parsed.outerUnit;
               colF = parsed.outerQty;
             }
-            deltaRowsToReplenish.push(["", pName, "", colD, colE, colF]);
+            deltaRowsToReplenish.push(["", pName, prodId, colD, colE, colF]);
             localDeltaItemsToReplenish.push({ name: pName, quantity: absDiff });
           }
         });

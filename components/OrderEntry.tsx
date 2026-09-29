@@ -70,6 +70,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   }, [initialCustomers]);
 
   useEffect(() => {
+    if (initialProducts && initialProducts.length > 0) {
+      setProducts(initialProducts);
+    }
+  }, [initialProducts]);
+
+  useEffect(() => {
     if (preSelectedCustomer) {
       setSelectedCustomer(preSelectedCustomer);
       onClearPreSelectedCustomer?.();
@@ -1126,7 +1132,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                        ) : (
                          <div className="space-y-3.5">
                           {selectedItems.map((item) => {
-                            const prod = products.find(p => p.name === item.name);
+                            const prod = products.find(p => p.name.trim() === item.name.trim());
                             const isUnlimited = !prod || !!prod.unlimitedStock;
                             const rem = prod ? getRemainingStock(prod) : Infinity;
                             const maxStockForThisOrder = getMaxStockForOrder(item.name);
