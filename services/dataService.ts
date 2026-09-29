@@ -1064,11 +1064,15 @@ export const parseTradeLogRows = (csvText: string, defaultSales: string): SavedO
         items: [orderItem],
         orderAmount: subtotal,
         isKeyedIn: true,
-        isHeld: false
+        isHeld: false,
+        stockDeducted: true,
+        deductedItems: [{ name: orderItem.name, quantity: orderItem.quantity }]
       });
     } else {
       const existing = orderMap.get(finalId)!;
       existing.items.push(orderItem);
+      if (!existing.deductedItems) existing.deductedItems = [];
+      existing.deductedItems.push({ name: orderItem.name, quantity: orderItem.quantity });
       existing.orderAmount += subtotal;
       if (!existing.remark && remark && remark !== '.') {
         existing.remark = remark;

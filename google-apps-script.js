@@ -439,18 +439,29 @@ function handleWriteTradeLog(param) {
   var uniqueIdsToDelete = Object.keys(incomingIds);
   if (uniqueIdsToDelete.length > 0) {
     var logSheetsForClean = getUniqueTradeLogSheets(ss);
+    var oldRowsToReplenish = [];
+
     logSheetsForClean.forEach(function(targetLogSheet) {
       var lastRow = targetLogSheet.getLastRow();
       if (lastRow > 1) {
-        var colMValues = targetLogSheet.getRange(2, 13, lastRow - 1, 1).getValues();
+        var allData = targetLogSheet.getRange(1, 1, lastRow, 14).getValues();
         for (var r = lastRow; r >= 2; r--) {
-          var cellValue = colMValues[r - 2][0];
-          if (cellValue && incomingIds[cellValue.toString().trim()]) {
+          var rowOrderId = (allData[r - 1][12] || '').toString().trim();
+          if (rowOrderId && incomingIds[rowOrderId]) {
+            oldRowsToReplenish.push(allData[r - 1]);
             targetLogSheet.deleteRow(r);
           }
         }
       }
     });
+
+    // If delta adjustment options are NOT supplied and there were existing rows,
+    // replenish old rows first so deducting the new rows results in the exact delta.
+    var hasExplicitDelta = (param.deltaRowsToDeduct && param.deltaRowsToDeduct.length > 0) ||
+                           (param.deltaRowsToReplenish && param.deltaRowsToReplenish.length > 0);
+    if (!hasExplicitDelta && !param.keepStock && !param.skipStockReplenish && param.replenishStock !== false && oldRowsToReplenish.length > 0) {
+      replenishInventoryInRaw(ss, oldRowsToReplenish);
+    }
   }
 
   // Append new trade rows

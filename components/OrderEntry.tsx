@@ -253,21 +253,24 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   const reservedQtyMap = useMemo(() => {
     const map = new Map<string, number>(otherOrdersReservedMap);
-    // For selected items: only subtract the net difference beyond what was already deducted
+    
+    // 1. Group current selected quantities by product name
+    const currentSelectedMap = new Map<string, number>();
     selectedItems.forEach(item => {
-      const norm = item.name.trim();
-      const currentQty = Number(item.quantity) || 0;
-      const alreadyDeducted = editingOrderDeductedMap.get(norm) || 0;
-      const netChange = currentQty - alreadyDeducted;
-      map.set(norm, (map.get(norm) || 0) + netChange);
+      if (item && item.name) {
+        const norm = item.name.trim();
+        const q = Number(item.quantity) || 0;
+        currentSelectedMap.set(norm, (currentSelectedMap.get(norm) || 0) + q);
+      }
     });
 
-    // If an item was in the original deducted order but completely removed during edit,
-    // its original deducted quantity is freed up and returned to available stock
-    editingOrderDeductedMap.forEach((origQty, pName) => {
-      if (!selectedItems.some(it => it.name.trim() === pName)) {
-        map.set(pName, (map.get(pName) || 0) - origQty);
-      }
+    // 2. All product keys across currently selected and previously deducted items
+    const allProdKeys = new Set([...currentSelectedMap.keys(), ...editingOrderDeductedMap.keys()]);
+    allProdKeys.forEach(pName => {
+      const currentQty = currentSelectedMap.get(pName) || 0;
+      const alreadyDeducted = editingOrderDeductedMap.get(pName) || 0;
+      const netChange = currentQty - alreadyDeducted;
+      map.set(pName, (map.get(pName) || 0) + netChange);
     });
 
     return map;
@@ -1126,8 +1129,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                             const prod = products.find(p => p.name === item.name);
                             const isUnlimited = !prod || !!prod.unlimitedStock;
                             const rem = prod ? getRemainingStock(prod) : Infinity;
-                            const otherReserved = otherOrdersReservedMap.get(item.name) || 0;
-                            const maxStockForThisOrder = prod && !prod.unlimitedStock ? ((prod.stock ?? 0) - otherReserved) : Infinity;
+                            const maxStockForThisOrder = getMaxStockForOrder(item.name);
 
                             return (
                               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all group">
