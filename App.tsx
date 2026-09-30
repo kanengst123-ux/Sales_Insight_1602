@@ -312,28 +312,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEditOrder = (order: SavedOrder) => {
-    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
-    if (!isOrderOwner(order, activeRole)) {
-      alert(`您只能修改屬於自己的訂單！\n此訂單業務為：${order.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
-      return;
-    }
-
-    const wasDeducted = Boolean(order.stockDeducted || order.isKeyedIn);
-    const orderToEdit: SavedOrder = {
-      ...order,
-      stockDeducted: wasDeducted,
-      deductedItems: (order.deductedItems && order.deductedItems.length > 0)
-        ? order.deductedItems
-        : (wasDeducted && order.items
-          ? order.items.map(it => ({ name: it.name, quantity: it.quantity }))
-          : undefined)
-    };
-
-    // Open order for editing without mutating isKeyedIn status in savedOrders
-    setEditingOrder(orderToEdit);
-    setActiveTab('order');
-  };
+  // handleEditOrder is defined below adjustLocalProductStock so it can replenish stock immediately
 
   const parseProductPacking = (productName: string): { outerQty: number; outerUnit: string } | null => {
     const match = productName.match(/(\d+)\/([^\s\d/]+)/);
@@ -578,6 +557,71 @@ const App: React.FC = () => {
       return updated;
     });
   }, []);
+
+  const handleEditOrder = (order: SavedOrder) => {
+    const activeRole = currentRole || localStorage.getItem('ws_selected_role');
+    if (!isOrderOwner(order, activeRole)) {
+      alert(`您只能修改屬於自己的訂單！\n此訂單業務為：${order.salesName || '未知'}，您目前的身份為：${activeRole || '未選擇'}`);
+      return;
+    }
+
+    const wasDeducted = Boolean(order.stockDeducted || order.isKeyedIn);
+
+    if (wasDeducted) {
+      const itemsToReplenish = (order.deductedItems && order.deductedItems.length > 0)
+        ? order.deductedItems
+        : (order.items || []);
+
+      // 1. Immediately add back all the stock in that order to local stock level (Col AC / Stock)
+      adjustLocalProductStock(itemsToReplenish, 'replenish');
+
+      // 2. Add back stock in Google Sheet (Col AC header: 'Stock') and delete old trade log rows
+      const rowsToSend = buildTradeRowsForOrder({
+        ...order,
+        items: itemsToReplenish.map(it => ({
+          id: it.name,
+          name: it.name,
+          quantity: it.quantity,
+          price: 0,
+          isOuterBox: false,
+          unitsPerBox: null,
+          outerBoxUnit: null
+        }))
+      });
+      deleteOrderFromSheet(order.id, rowsToSend).catch(err => {
+        console.error("Failed to replenish stock in sheet on edit:", err);
+      });
+      recentlySubmittedOrderIds.delete(order.id);
+    }
+
+    const orderToEdit: SavedOrder = {
+      ...order,
+      isKeyedIn: false,
+      stockDeducted: false,
+      deductedItems: undefined,
+      updatedAt: Date.now()
+    };
+
+    // Update in savedOrders as unkeyed and stock not deducted
+    setSavedOrders(prev => {
+      const next = prev.map(o => o.id === order.id ? orderToEdit : o);
+      localStorage.setItem('榮昇_saved_orders', JSON.stringify(next));
+      return next;
+    });
+
+    try {
+      keyInServerOrder(order.id, false, {
+        stockDeducted: false,
+        deductedItems: []
+      }).catch(e => console.warn("Failed to reset server key-in on edit:", e));
+      saveServerOrder(orderToEdit).catch(e => console.warn("Failed to sync edited order:", e));
+    } catch (e) {
+      console.warn("Failed to sync edited order reset:", e);
+    }
+
+    setEditingOrder(orderToEdit);
+    setActiveTab('order');
+  };
 
   const handleToggleKeyIn = async (orderId: string) => {
     const activeRole = currentRole || localStorage.getItem('ws_selected_role');
