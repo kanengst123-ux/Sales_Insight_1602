@@ -27,7 +27,8 @@ import InactiveCustomers from './components/InactiveCustomers';
 import CustomerGrades from './components/CustomerGrades';
 import OrderEntry from './components/OrderEntry';
 import OrderList from './components/OrderList';
-import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered, UserCircle } from 'lucide-react';
+import PasswordGate from './components/PasswordGate';
+import { Layout, BarChart3, Database, RefreshCw, AlertCircle, Loader2, Table as TableIcon, Menu, X, FileQuestion, Globe, HardDrive, Settings2, ReceiptText, UserX, Award, Plus, ListOrdered, UserCircle, Lock } from 'lucide-react';
 
 // Track order IDs submitted in this current session so they stay marked until next sheet sync
 const recentlySubmittedOrderIds = new Set<string>();
@@ -155,6 +156,13 @@ const mergeOrderLists = (
 };
 
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ws_app_unlocked') === 'true' || localStorage.getItem('ws_app_auth') === '9632';
+    } catch {
+      return false;
+    }
+  });
   const [records, setRecords] = useState<SaleRecord[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -1254,8 +1262,29 @@ const App: React.FC = () => {
         <div className="shrink-0"><ListOrdered className="w-5 h-5" /></div>
         <span className="truncate">訂單列表</span>
       </button>
+
+      <button
+        onClick={() => { handleLockApp(); setIsSidebarOpen(false); }}
+        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 text-xs font-bold mt-2 border border-slate-800/60"
+        title="重新鎖定系統（下次開啟需輸入密碼）"
+      >
+        <div className="shrink-0"><Lock className="w-4 h-4" /></div>
+        <span className="truncate">鎖定系統</span>
+      </button>
     </>
   );
+
+  const handleLockApp = () => {
+    try {
+      localStorage.removeItem('ws_app_unlocked');
+      localStorage.removeItem('ws_app_auth');
+    } catch {}
+    setIsAuthenticated(false);
+  };
+
+  if (!isAuthenticated) {
+    return <PasswordGate onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
 
   if (loading) {
     return (

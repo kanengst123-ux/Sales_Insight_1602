@@ -40,6 +40,45 @@ interface OrderListProps {
 
 const PAGE_SIZE = 50;
 
+// Helper to parse order date into a sortable timestamp
+const getOrderDateTimestamp = (order: SavedOrder): number => {
+  if (order.date) {
+    const raw = order.date.trim();
+    // 1. Direct parse
+    let parsed = Date.parse(raw);
+    if (!isNaN(parsed)) return parsed;
+
+    // 2. Format with slashes or dashes: YYYY/MM/DD or YYYY-MM-DD
+    const normalized = raw.replace(/-/g, '/');
+    parsed = Date.parse(normalized);
+    if (!isNaN(parsed)) return parsed;
+
+    // 3. Format YYYY/MM/DD HH:mm:ss or similar parts
+    const parts = raw.split(/[\s/:\-_]+/);
+    if (parts.length >= 3 && parts[0].length === 4) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      const hh = parts[3] ? parseInt(parts[3], 10) : 0;
+      const mm = parts[4] ? parseInt(parts[4], 10) : 0;
+      const ss = parts[5] ? parseInt(parts[5], 10) : 0;
+      const dt = new Date(y, m, d, hh, mm, ss);
+      if (!isNaN(dt.getTime())) return dt.getTime();
+    }
+  }
+
+  // Fallback to order.updatedAt if date string cannot be parsed
+  if (order.updatedAt) return order.updatedAt;
+
+  // Fallback to timestamp in numeric ID
+  const numId = Number(order.id);
+  if (!isNaN(numId) && numId > 1000000000000) {
+    return numId;
+  }
+
+  return 0;
+};
+
 const OrderList: React.FC<OrderListProps> = ({ 
   orders, 
   onEditOrder, 
@@ -175,7 +214,7 @@ const OrderList: React.FC<OrderListProps> = ({
 
   // Detailed filtering by user, status, and search query
   const filteredOrders = useMemo(() => {
-    return roleFilteredOrders.filter(order => {
+    const list = roleFilteredOrders.filter(order => {
       // User filter
       if (selectedUser !== 'ALL' && (order.salesName || '').trim().toUpperCase() !== selectedUser.trim().toUpperCase()) {
         return false;
@@ -204,7 +243,26 @@ const OrderList: React.FC<OrderListProps> = ({
 
       return true;
     });
-  }, [roleFilteredOrders, selectedUser, statusFilter, searchQuery, currentRole]);
+
+    // When '全部sales' is selected (showAll is true or selectedUser === 'ALL'), show the orders in descending order by date
+    if (showAll || selectedUser === 'ALL') {
+      return [...list].sort((a, b) => {
+        const timeA = getOrderDateTimestamp(a);
+        const timeB = getOrderDateTimestamp(b);
+        if (timeB !== timeA) {
+          return timeB - timeA;
+        }
+        const updatedA = a.updatedAt || 0;
+        const updatedB = b.updatedAt || 0;
+        if (updatedB !== updatedA) {
+          return updatedB - updatedA;
+        }
+        return (b.id || '').localeCompare(a.id || '');
+      });
+    }
+
+    return list;
+  }, [roleFilteredOrders, selectedUser, statusFilter, searchQuery, currentRole, showAll]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
