@@ -1,10 +1,77 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { User, ShieldCheck, ArrowLeft, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X } from 'lucide-react';
+import { User, ShieldCheck, ArrowLeft, ArrowRight, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts, addCustomerToSheet, addProductToSheet } from '../services/dataService';
 import { Product, OrderItem, Customer, SavedOrder, isOrderOwner } from '../types';
 import { ProductThumbnail } from './ProductThumbnail';
+
+export const CATEGORY_BUTTONS = [
+  '奶粉',
+  'PAMPERS',
+  '花王尿片',
+  '頭水',
+  '滴露',
+  '幸福',
+  '必理痛',
+  '李施德林'
+] as const;
+
+export const getProductCategoryString = (p: Product): string => {
+  if (p.category && p.category.trim()) return p.category.trim();
+  if (p.categories && p.categories.trim()) return p.categories.trim();
+  if (Array.isArray(p.allValues) && p.allValues.length > 12 && p.allValues[12]) {
+    const val = String(p.allValues[12]).trim();
+    if (val) return val;
+  }
+  if (p.extraAttributes?.Categories && p.extraAttributes.Categories !== 'Google Sheet Sync') {
+    const val = String(p.extraAttributes.Categories).trim();
+    if (val) return val;
+  }
+  return '';
+};
+
+export const matchProductCategory = (p: Product, buttonName: string): boolean => {
+  const cat = getProductCategoryString(p).toLowerCase();
+  const name = (p.name || '').toLowerCase();
+  const b = buttonName.toLowerCase().trim();
+
+  // 1. Primary check: Col M (header: Categories) of 'raw' tab contains the button name
+  if (cat.includes(b)) return true;
+
+  // 2. Specific matching rules for brand / category variants in raw sheet:
+  if (b === '奶粉') {
+    return cat.includes('奶粉') || name.includes('奶粉');
+  }
+  if (b === 'pampers') {
+    return cat.includes('pampers') || name.includes('pampers');
+  }
+  if (b === '花王尿片') {
+    return (
+      cat.includes('花王尿片') ||
+      (cat.includes('花王') && (cat.includes('尿片') || cat.includes('褲'))) ||
+      (name.includes('花王') && (name.includes('片') || name.includes('褲') || name.includes('merries'))) ||
+      (name.includes('merries') && (name.includes('片') || name.includes('褲')))
+    );
+  }
+  if (b === '頭水') {
+    return cat.includes('頭水') || name.includes('洗髮') || name.includes('洗頭') || name.includes('頭水');
+  }
+  if (b === '滴露') {
+    return cat.includes('滴露') || cat.includes('dettol') || name.includes('滴露') || name.includes('dettol');
+  }
+  if (b === '幸福') {
+    return cat.includes('幸福') || name.includes('幸福');
+  }
+  if (b === '必理痛') {
+    return cat.includes('必理痛') || name.includes('必理痛');
+  }
+  if (b === '李施德林') {
+    return cat.includes('李施德林') || cat.includes('李施') || name.includes('李施德林') || name.includes('李施');
+  }
+
+  return name.includes(b);
+};
 
 interface OrderEntryProps {
   onBack: () => void;
@@ -81,6 +148,38 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const [remark, setRemark] = useState(editingOrder?.remark || '');
   const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
   const [tempPrices, setTempPrices] = useState<Record<string, string>>({});
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+
+  const selectedCustomerInfo = useMemo(() => {
+    return customers.find(c => c.name === selectedCustomer);
+  }, [customers, selectedCustomer]);
+
+  const getProductPrice = useCallback((product: Product): number => {
+    const grade = selectedCustomerInfo?.grade || 'C';
+    let rawTieredPrice: any = 0;
+    if (product.prices && product.prices[grade] !== undefined && product.prices[grade] !== null && (product.prices[grade] as any) !== '') {
+      rawTieredPrice = product.prices[grade];
+    } else if ((product as any)[`price${grade}`] !== undefined) {
+      rawTieredPrice = (product as any)[`price${grade}`];
+    } else {
+      rawTieredPrice = product.price || 0;
+    }
+    return typeof rawTieredPrice === 'number'
+      ? rawTieredPrice
+      : (parseFloat(String(rawTieredPrice).replace(/[^0-9.-]/g, '')) || 0);
+  }, [selectedCustomerInfo]);
+
+  const categoryFilteredProducts = useMemo(() => {
+    if (!selectedCategory) return [];
+    const matched = products.filter(p => matchProductCategory(p, selectedCategory));
+    if (!categorySearchQuery.trim()) return matched;
+    const q = categorySearchQuery.toLowerCase().trim();
+    return matched.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      ((p.category || p.categories || '').toLowerCase().includes(q))
+    );
+  }, [products, selectedCategory, categorySearchQuery]);
 
   const toggleRemarkKeyword = (keyword: string, checked: boolean) => {
     if (checked) {
@@ -167,7 +266,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
 
   useEffect(() => {
     const loadData = async () => {
-      if (initialProducts && initialProducts.length > 0 && initialProducts.some(p => p.list !== undefined)) {
+      const hasCategories = initialProducts && initialProducts.length > 0 && initialProducts.some(p => p.category || p.categories || (p.allValues && p.allValues[12]));
+      if (initialProducts && initialProducts.length > 0 && initialProducts.some(p => p.list !== undefined) && hasCategories) {
         setProducts(initialProducts);
         setProductsLoading(false);
         return;
@@ -218,10 +318,6 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
     return null;
   };
-
-  const selectedCustomerInfo = useMemo(() => {
-    return customers.find(c => c.name === selectedCustomer);
-  }, [customers, selectedCustomer]);
 
   // Saved orders reservation: stock is deducted only upon pressing '入機'.
   // Draft and held orders do not reduce available stock until '入機' is pressed.
@@ -870,6 +966,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                           const displayQtyText = isBoxMode && boxUnits > 0
                             ? `${Math.round((totalQty / boxUnits) * 10) / 10} ${firstItem?.outerBoxUnit || '箱'}`
                             : `${totalQty}`;
+                          const price = getProductPrice(p);
 
                           return (
                             <div
@@ -903,8 +1000,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2.5 mt-1.5">
+                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                     <ProductThumbnail product={p} size="sm" />
+                                    <span className="text-sm sm:text-base font-black text-blue-700 tabular-nums">
+                                      ${price.toFixed(2)}
+                                    </span>
+                                    <span className="text-slate-300">•</span>
                                     <span className={`text-xs sm:text-sm font-bold ${
                                       isUnlimited ? 'text-slate-400' : (remaining < 0) ? 'text-rose-600' : (remaining === 0) ? 'text-rose-600' : (remaining < 10) ? 'text-amber-600' : 'text-slate-500'
                                     }`}>
@@ -987,7 +1088,259 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
         <div className="flex-1 overflow-hidden bg-slate-50/30 flex flex-col relative">
           <div className="flex-1 relative overflow-hidden">
             <AnimatePresence mode="wait">
-              {activeTab === 'order' ? (
+              {selectedCategory ? (
+                <motion.div
+                  key={`category-page-${selectedCategory}`}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                  className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar bg-slate-50/40"
+                >
+                  <div className="w-full max-w-7xl mx-auto space-y-3">
+                    {/* Category Page Top Navigation Header */}
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-3 sm:p-3.5 shadow-xs space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedCategory(null); setCategorySearchQuery(''); }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs transition-all active:scale-95 border border-slate-200"
+                        >
+                          <ArrowLeft className="w-4 h-4 text-blue-600" />
+                          <span>返回訂單</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs sm:text-sm font-black bg-blue-600 text-white px-3 py-1 rounded-xl shadow-xs truncate">
+                            {selectedCategory}
+                          </span>
+                          <span className="text-[11px] sm:text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg shrink-0">
+                            {categoryFilteredProducts.length} 款
+                          </span>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span className="text-[11px] font-bold text-slate-600 block truncate max-w-[120px]">
+                            {selectedCustomer}
+                          </span>
+                          <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                            Grade {selectedCustomerInfo?.grade}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Quick category switch pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none flex-nowrap">
+                        {CATEGORY_BUTTONS.map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => { setSelectedCategory(cat); setCategorySearchQuery(''); }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black whitespace-nowrap transition-all ${
+                              selectedCategory === cat
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* In-category search input */}
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={categorySearchQuery}
+                          onChange={(e) => setCategorySearchQuery(e.target.value)}
+                          placeholder={`搜尋 ${selectedCategory} 貨品名稱或規格...`}
+                          className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        />
+                        {categorySearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setCategorySearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Products List in Category - Responsive Multiple Items Per Row Grid */}
+                    {categoryFilteredProducts.length === 0 ? (
+                      <div className="p-12 text-center text-slate-400 bg-white border border-slate-200 rounded-2xl">
+                        <p className="font-bold text-sm">此分類暫無匹配貨品</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
+                        {categoryFilteredProducts.map((p) => {
+                          const existingItem = selectedItems.find(it => it.name === p.name);
+                          const price = getProductPrice(p);
+                          const rem = getRemainingStock(p);
+                          const isSelected = !!existingItem;
+
+                          return (
+                            <div
+                              key={p.name}
+                              className={`p-2.5 sm:p-3 bg-white border rounded-2xl transition-all shadow-xs flex flex-col justify-between ${
+                                isSelected 
+                                  ? 'border-blue-500 bg-blue-50/20 ring-1 ring-blue-500/20 shadow-sm' 
+                                  : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                              }`}
+                            >
+                              <div className="flex flex-col">
+                                {/* Centered Thumbnail */}
+                                <div className="relative flex justify-center items-center py-1 mb-1.5 bg-slate-50/80 rounded-xl overflow-hidden">
+                                  <ProductThumbnail product={p} size="sm" className="w-14 h-14 sm:w-16 sm:h-16 object-contain" />
+                                  {isSelected && (
+                                    <span className="absolute top-1 right-1 text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded shadow-xs">
+                                      已選 {existingItem.quantity}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Title with 2-line clamp */}
+                                <h5 className="font-black text-xs sm:text-sm text-slate-900 leading-snug line-clamp-2 min-h-[2.4rem] break-words" title={p.name}>
+                                  {p.name}
+                                </h5>
+
+                                {/* Price and Stock */}
+                                <div className="flex items-baseline justify-between mt-1 gap-1">
+                                  <span className="text-xs sm:text-sm font-black text-blue-700 tabular-nums">
+                                    ${price.toFixed(2)}
+                                  </span>
+                                  <span className={`text-[10px] sm:text-[11px] font-bold truncate ${
+                                    p.unlimitedStock 
+                                      ? 'text-slate-400' 
+                                      : rem <= 0 
+                                        ? 'text-rose-600 font-black' 
+                                        : rem < 10 
+                                          ? 'text-amber-600' 
+                                          : 'text-slate-500'
+                                  }`}>
+                                    {p.unlimitedStock ? '無限制' : `剩餘: ${rem}`}
+                                  </span>
+                                </div>
+
+                                {/* Category label if available */}
+                                {getProductCategoryString(p) && (
+                                  <div className="text-[9px] text-slate-400 truncate mt-0.5" title={getProductCategoryString(p)}>
+                                    {getProductCategoryString(p).split('\n')[0]}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action buttons on card */}
+                              <div className="mt-2 pt-2 border-t border-slate-100 flex flex-col justify-end">
+                                {!existingItem ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddProduct(p)}
+                                    className="w-full py-1.5 sm:py-2 px-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1 shadow-xs transition-all"
+                                  >
+                                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                    <span>加入訂單</span>
+                                  </button>
+                                ) : (
+                                  <div className="w-full flex flex-col gap-1.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReduceProduct(p)}
+                                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center font-black transition-colors shrink-0"
+                                      >
+                                        <Minus className="w-3.5 h-3.5 stroke-[3]" />
+                                      </button>
+
+                                      <input
+                                        type="number"
+                                        value={existingItem.quantity}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value) || 0;
+                                          handleUpdateItem(existingItem.id, { quantity: val });
+                                        }}
+                                        className="w-full min-w-0 h-7 sm:h-8 text-center text-xs sm:text-sm font-black bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      />
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddProduct(p)}
+                                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center font-black shadow-xs transition-colors shrink-0"
+                                      >
+                                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                      </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-1">
+                                      {existingItem.unitsPerBox && existingItem.unitsPerBox > 1 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const boxQty = Number(existingItem.unitsPerBox) || 1;
+                                            if (existingItem.isOuterBox) {
+                                              handleUpdateItem(existingItem.id, { isOuterBox: false, quantity: 1 });
+                                            } else {
+                                              handleUpdateItem(existingItem.id, { isOuterBox: true, quantity: boxQty });
+                                            }
+                                          }}
+                                          className={`flex-1 py-1 px-1 rounded-lg text-[10px] font-black border transition-all text-center truncate ${
+                                            existingItem.isOuterBox
+                                              ? 'bg-blue-600 text-white border-blue-600'
+                                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                                          }`}
+                                        >
+                                          {existingItem.isOuterBox ? `${existingItem.outerBoxUnit || '箱'}` : '散裝'}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[10px] text-blue-600 font-bold px-0.5 truncate">已選購</span>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveItem(existingItem.id)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors shrink-0"
+                                        title="刪除"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Bottom Sticky Action Bar inside Category Page */}
+                    <div className="sticky bottom-0 -mx-2 sm:-mx-4 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg z-20">
+                      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] sm:text-xs font-bold text-slate-500">
+                            已選 <strong className="text-blue-700 font-black text-sm sm:text-base">{selectedItems.length}</strong> 項貨品
+                          </div>
+                          <div className="text-sm sm:text-base font-black text-slate-900">
+                            總金額: ${totalOrderAmount.toLocaleString()}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedCategory(null); setCategorySearchQuery(''); }}
+                          className="px-4 sm:px-6 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black text-xs sm:text-sm shadow-md shadow-green-600/20 active:scale-95 transition-all flex items-center gap-1.5"
+                        >
+                          <span>完成並返回訂單</span>
+                          <ArrowRight className="w-4 h-4 stroke-[3]" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : activeTab === 'order' ? (
                 <motion.div
                   key="order-tab"
                   initial={{ x: 0, opacity: 1 }}
@@ -996,108 +1349,143 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                   className="absolute inset-0 overflow-y-auto px-2 sm:px-4 pt-3 pb-24 custom-scrollbar"
                 >
                   <div className="max-w-md mx-auto">
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       <div className="flex flex-col px-1">
-                        <div className="flex items-center justify-between gap-3 mb-2.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <h4 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight truncate">
-                              {selectedCustomer}
-                            </h4>
-                            <span className="text-xs sm:text-sm font-black bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full flex-shrink-0">
-                              Grade {selectedCustomerInfo?.grade}
-                            </span>
-                            <span className="flex items-center justify-center min-w-[24px] h-6 bg-slate-200 text-slate-700 text-xs sm:text-sm font-black rounded-full px-2 flex-shrink-0">
-                              {selectedItems.length}
-                            </span>
+                        {/* TOP SECTION: Customer Info & Remarks on Left, 8 Category Buttons on Right (Red Box Space) */}
+                        <div className="flex items-start justify-between gap-2 sm:gap-2.5 mb-2.5">
+                          {/* Left Column: Customer, Remark, 2-line Checkboxes */}
+                          <div className="flex-1 min-w-0 flex flex-col gap-2">
+                            {/* Customer Name, Grade, and Item count badge */}
+                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                              <h4 className="text-base sm:text-xl font-black text-slate-900 tracking-tight truncate">
+                                {selectedCustomer}
+                              </h4>
+                              <span className="text-[11px] sm:text-xs font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                                Grade {selectedCustomerInfo?.grade}
+                              </span>
+                              <span className="flex items-center justify-center min-w-[20px] h-5 sm:h-6 bg-slate-200 text-slate-700 text-[11px] sm:text-xs font-black rounded-full px-1.5 flex-shrink-0">
+                                {selectedItems.length}
+                              </span>
+                            </div>
+
+                            {/* Remark Button */}
+                            <div className="flex items-center gap-2">
+                              <button 
+                                type="button"
+                                onClick={() => setShowRemarkInput(!showRemarkInput)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-black transition-all border shadow-sm ${
+                                  remark 
+                                    ? 'bg-blue-700 text-white border-blue-700 shadow-blue-700/20' 
+                                    : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700 shadow-blue-600/20'
+                                }`}
+                              >
+                                <Check className={`w-3.5 h-3.5 stroke-[3] ${remark ? 'block' : 'hidden'}`} />
+                                {remark ? '已添加備註' : '+ 備註'}
+                              </button>
+                              {remark && (
+                                <button 
+                                  type="button"
+                                  onClick={() => setRemark('')} 
+                                  className="text-[11px] font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Checkboxes: 2 rows! Row 1: 收及單 & 明天送; Row 2: COD & 原板落, 不搬 */}
+                            <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200 px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 max-w-full">
+                              {/* Row 1: 收及單 & 明天送 */}
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 transition-colors select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={remark.includes('收及單')}
+                                    onChange={(e) => toggleRemarkKeyword('收及單', e.target.checked)}
+                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                  />
+                                  <span className="whitespace-nowrap">收及單</span>
+                                </label>
+                                <div className="h-3 w-px bg-slate-200 mx-0.5" />
+                                <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 transition-colors select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={remark.includes('明天送')}
+                                    onChange={(e) => toggleRemarkKeyword('明天送', e.target.checked)}
+                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                  />
+                                  <span className="whitespace-nowrap">明天送</span>
+                                </label>
+                              </div>
+
+                              {/* Row 2: COD & 原板落, 不搬 (under 收及單 & 明天送) */}
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                                <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 transition-colors select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={remark.includes('COD')}
+                                    onChange={(e) => toggleRemarkKeyword('COD', e.target.checked)}
+                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                  />
+                                  <span className="whitespace-nowrap">COD</span>
+                                </label>
+                                <div className="h-3 w-px bg-slate-200 mx-0.5" />
+                                <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 transition-colors select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={remark.includes('原板落, 不搬')}
+                                    onChange={(e) => toggleRemarkKeyword('原板落, 不搬', e.target.checked)}
+                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
+                                  />
+                                  <span className="whitespace-nowrap">原板落, 不搬</span>
+                                </label>
+                              </div>
+                            </div>
                           </div>
-                          {selectedItems.length > 0 && (
-                            <button 
-                              onClick={handleFinalSave}
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 sm:px-5 py-2.5 rounded-xl shadow-md shadow-green-600/20 active:scale-95 transition-all group shrink-0 text-base sm:text-lg font-black flex items-center gap-1.5"
-                              title="Place Order"
-                            >
-                              <Check className="w-5 h-5 stroke-[3]" />
-                              <span>此單完成</span>
-                            </button>
-                          )}
+
+                          {/* Right Column: 8 Category Buttons in the Red Box Space */}
+                          <div className="w-[160px] sm:w-[190px] shrink-0 flex flex-col justify-start">
+                            <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+                              {CATEGORY_BUTTONS.map((btn) => (
+                                <button
+                                  key={btn}
+                                  type="button"
+                                  onClick={() => { setSelectedCategory(btn); setCategorySearchQuery(''); }}
+                                  className="h-8 flex items-center justify-center px-1 py-1 bg-blue-50/90 hover:bg-blue-600 active:scale-95 text-blue-700 hover:text-white border border-blue-200/90 rounded-lg text-[11px] sm:text-xs font-black transition-all shadow-xs text-center truncate group"
+                                  title={`選擇 ${btn} 貨品`}
+                                >
+                                  <span className="truncate">{btn}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Order Summary banner */}
+                        {/* Order Summary banner & 此單完成 button */}
                         {selectedItems.length > 0 && (
-                          <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl px-4 py-3 mb-3 shadow-xs">
-                            <div className="flex items-center gap-2 text-slate-700 font-bold text-base sm:text-lg">
-                              <ShoppingCart className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                              <span>已選 <strong className="text-blue-700 font-black text-lg sm:text-xl">{selectedItems.length}</strong> 項貨品</span>
+                          <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 mb-2 shadow-xs">
+                            <div className="flex items-center gap-2 text-slate-700 font-bold text-xs sm:text-base">
+                              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                              <span>已選 <strong className="text-blue-700 font-black text-sm sm:text-lg">{selectedItems.length}</strong> 項</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm sm:text-base font-bold text-slate-500">總金額:</span>
-                              <span className="text-xl sm:text-2xl font-black text-blue-700 tabular-nums">
-                                ${totalOrderAmount.toLocaleString()}
-                              </span>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] sm:text-sm font-bold text-slate-500">總金額:</span>
+                                <span className="text-base sm:text-xl font-black text-blue-700 tabular-nums">
+                                  ${totalOrderAmount.toLocaleString()}
+                                </span>
+                              </div>
+                              <button 
+                                onClick={handleFinalSave}
+                                className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl shadow-md shadow-green-600/20 active:scale-95 transition-all group shrink-0 text-xs sm:text-base font-black flex items-center gap-1"
+                                title="此單完成"
+                              >
+                                <Check className="w-4 h-4 stroke-[3]" />
+                                <span>此單完成</span>
+                              </button>
                             </div>
                           </div>
                         )}
-
-                        <div className="flex flex-wrap items-center gap-3">
-                          <button 
-                            onClick={() => setShowRemarkInput(!showRemarkInput)}
-                            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm sm:text-base font-black transition-all border shadow-sm ${
-                              remark 
-                                ? 'bg-blue-700 text-white border-blue-700 shadow-blue-700/20' 
-                                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700 shadow-blue-600/20'
-                            }`}
-                          >
-                            <Check className={`w-4 h-4 stroke-[3] ${remark ? 'block' : 'hidden'}`} />
-                            {remark ? '已添加備註' : '+ 備註'}
-                          </button>
-
-                          {/* Quick Select Remark Checkboxes next to the button */}
-                          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl max-w-full">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
-                              <input
-                                type="checkbox"
-                                checked={remark.includes('收及單')}
-                                onChange={(e) => toggleRemarkKeyword('收及單', e.target.checked)}
-                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
-                              />
-                              收及單
-                            </label>
-                            <div className="h-4 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
-                              <input
-                                type="checkbox"
-                                checked={remark.includes('明天送')}
-                                onChange={(e) => toggleRemarkKeyword('明天送', e.target.checked)}
-                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
-                              />
-                              明天送
-                            </label>
-                            <div className="h-4 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
-                              <input
-                                type="checkbox"
-                                checked={remark.includes('COD')}
-                                onChange={(e) => toggleRemarkKeyword('COD', e.target.checked)}
-                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
-                              />
-                              COD
-                            </label>
-                            <div className="h-4 w-px bg-slate-200" />
-                            <label className="flex items-center gap-1.5 cursor-pointer text-sm sm:text-base font-bold text-slate-700 hover:text-slate-900 transition-colors select-none">
-                              <input
-                                type="checkbox"
-                                checked={remark.includes('原板落, 不搬')}
-                                onChange={(e) => toggleRemarkKeyword('原板落, 不搬', e.target.checked)}
-                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20 cursor-pointer"
-                              />
-                              原板落, 不搬
-                            </label>
-                          </div>
-
-                          {remark && (
-                            <button onClick={() => setRemark('')} className="text-xs sm:text-sm font-black text-red-500 uppercase tracking-widest hover:text-red-700 transition-colors">Clear</button>
-                          )}
-                        </div>
                       </div>
 
                       {showRemarkInput && (
@@ -1158,42 +1546,52 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                       </div>
                                     </div>
                                   </div>
-                                  {item.unitsPerBox && (
-                                    <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
-                                        }}
-                                        className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
-                                          !item.isOuterBox 
-                                            ? 'bg-white text-blue-600 shadow-sm' 
-                                            : 'text-slate-500 hover:text-slate-700'
-                                        }`}
-                                      >
-                                        單位
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const boxQty = item.unitsPerBox || 12;
-                                          handleUpdateItem(item.id, { isOuterBox: true, quantity: boxQty });
-                                        }}
-                                        className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
-                                          item.isOuterBox 
-                                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
-                                            : 'text-slate-500 hover:text-slate-700'
-                                        }`}
-                                      >
-                                        {item.outerBoxUnit || '箱'}
-                                      </button>
-                                    </div>
-                                  )}
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {item.unitsPerBox && (
+                                      <div className="flex p-0.5 bg-slate-100 rounded-lg flex-shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleUpdateItem(item.id, { isOuterBox: false, quantity: 1 });
+                                          }}
+                                          className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
+                                            !item.isOuterBox 
+                                              ? 'bg-white text-blue-600 shadow-sm' 
+                                              : 'text-slate-500 hover:text-slate-700'
+                                          }`}
+                                        >
+                                          單位
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const boxQty = item.unitsPerBox || 12;
+                                            handleUpdateItem(item.id, { isOuterBox: true, quantity: boxQty });
+                                          }}
+                                          className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-black transition-all ${
+                                            item.isOuterBox 
+                                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' 
+                                              : 'text-slate-500 hover:text-slate-700'
+                                          }`}
+                                        >
+                                          {item.outerBoxUnit || '箱'}
+                                        </button>
+                                      </div>
+                                    )}
+                                    <button 
+                                      type="button"
+                                      onClick={() => handleRemoveItem(item.id)}
+                                      className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+                                      title="刪除此貨品"
+                                    >
+                                      <Trash2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                                    </button>
+                                  </div>
                                 </div>
 
-                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-between gap-1.5 sm:gap-2 pt-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
                                   {/* Quantity Stepper */}
-                                  <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-32 flex-shrink-0">
+                                  <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden w-28 sm:w-32 flex-shrink-0">
                                     <button 
                                       type="button"
                                       onClick={() => {
@@ -1201,10 +1599,10 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                         const curQty = Number(item.quantity) || 0;
                                         handleUpdateItem(item.id, { quantity: curQty - step });
                                       }}
-                                      className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                      className="p-1.5 sm:p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                                       title="減少數量"
                                     >
-                                      <Minus className="w-4 h-4 stroke-[3]" />
+                                      <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
                                     </button>
                                     <input
                                       type="number"
@@ -1214,7 +1612,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                         const val = parseFloat(e.target.value) || 0;
                                         handleUpdateItem(item.id, { quantity: val });
                                       }}
-                                      className="w-full text-center bg-transparent text-lg sm:text-xl font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                      className="w-full text-center bg-transparent text-base sm:text-xl font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
                                     />
                                     <button 
                                       type="button"
@@ -1223,15 +1621,15 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                         const curQty = Number(item.quantity) || 0;
                                         handleUpdateItem(item.id, { quantity: curQty + step });
                                       }}
-                                      className="p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                                      className="p-1.5 sm:p-2.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                                       title="增加數量"
                                     >
-                                      <Plus className="w-4 h-4 stroke-[3]" />
+                                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
                                     </button>
                                   </div>
                                    {/* Price Adjustment */}
                                    <div className="flex items-center justify-center flex-shrink-0">
-                                     <div className="flex items-center gap-1">
+                                     <div className="flex items-center gap-0.5 sm:gap-1">
                                        <button 
                                          type="button"
                                          onClick={() => {
@@ -1245,14 +1643,14 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                              return copy;
                                            });
                                          }}
-                                         className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         className="p-1.5 sm:p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
                                          title="減$1"
                                        >
-                                         <Minus className="w-4 h-4 stroke-[3]" />
+                                         <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
                                        </button>
 
-                                       <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 px-2 py-1.5 w-24 flex-shrink-0">
-                                         <span className="text-slate-400 text-sm font-black mr-0.5 shrink-0">$</span>
+                                       <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 px-1.5 py-1 sm:px-2 sm:py-1.5 w-18 sm:w-24 flex-shrink-0">
+                                         <span className="text-slate-400 text-xs sm:text-sm font-black mr-0.5 shrink-0">$</span>
                                          <input
                                            type="text"
                                            inputMode="decimal"
@@ -1278,7 +1676,7 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                                return copy;
                                              });
                                            }}
-                                           className="w-full text-center bg-transparent text-base sm:text-lg font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
+                                           className="w-full text-center bg-transparent text-sm sm:text-base md:text-lg font-black text-slate-900 focus:outline-none tabular-nums min-w-0"
                                          />
                                        </div>
 
@@ -1295,23 +1693,23 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                              return copy;
                                            });
                                          }}
-                                         className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
+                                         className="p-1.5 sm:p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors active:scale-95"
                                          title="加$1"
                                        >
-                                         <Plus className="w-4 h-4 stroke-[3]" />
+                                         <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
                                        </button>
                                      </div>
                                    </div>
 
                                    {/* Subtotal & Delete */}
-                                   <div className="flex items-center justify-end gap-2 flex-shrink-0">
-                                     <span className="text-base sm:text-lg md:text-xl font-black text-blue-600 block tabular-nums leading-none text-right">
+                                   <div className="flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0 ml-auto">
+                                     <span className="text-sm sm:text-base md:text-xl font-black text-blue-600 block tabular-nums leading-none text-right">
                                        ${(item.quantity * item.price).toLocaleString()}
                                      </span>
                                      <button 
                                        type="button"
                                        onClick={() => handleRemoveItem(item.id)}
-                                       className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+                                       className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
                                        title="刪除"
                                      >
                                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -1350,8 +1748,9 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                        </div>
                     ) : (
                        <div className="grid grid-cols-1 gap-3">
-                        {favorites.map((p, idx) => {
+                         {favorites.map((p, idx) => {
                           const rem = getRemainingStock(p);
+                          const price = getProductPrice(p);
                           return (
                             <div
                               key={idx}
@@ -1367,8 +1766,12 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                 </button>
                                 <div className="flex flex-col min-w-0 align-left text-left">
                                   <span className="text-base sm:text-lg font-black leading-snug break-words text-slate-900">{p.name}</span>
-                                  <div className="flex items-center gap-2.5 mt-1.5">
+                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                     <ProductThumbnail product={p} size="sm" />
+                                    <span className="text-sm sm:text-base font-black text-blue-700 tabular-nums">
+                                      ${price.toFixed(2)}
+                                    </span>
+                                    <span className="text-slate-300">•</span>
                                     {p.unlimitedStock ? (
                                       <span className="text-xs sm:text-sm font-bold text-slate-400">庫存: 無限制</span>
                                     ) : (

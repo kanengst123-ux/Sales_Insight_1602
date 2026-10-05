@@ -71,6 +71,10 @@ export interface Product {
   list?: string | number;
   imageUrl?: string;
   rawImageUrl?: string;
+  category?: string;
+  categories?: string;
+  allValues?: string[];
+  extraAttributes?: Record<string, any>;
 }
 
 export interface Customer {

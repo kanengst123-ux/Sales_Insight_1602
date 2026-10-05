@@ -861,6 +861,7 @@ function handleGetProducts() {
   var priceIdx = 14; // Col O
   var unlimitedIdx = 27; // Col AB
   var stockIdx = 28; // Col AC
+  var categoriesIdx = 12; // Col M
 
   for (var i = 0; i < Math.min(values.length, 10); i++) {
     var row = values[i];
@@ -884,6 +885,7 @@ function handleGetProducts() {
         else if (normed === 'price') priceIdx = j;
         else if (normed.indexOf('unlimitedstock') !== -1) unlimitedIdx = j;
         else if (normed === 'stock' || cellStr.indexOf('庫存') !== -1) stockIdx = j;
+        else if (cellStr === 'categories' || cellStr === 'category' || cellStr.indexOf('分類') !== -1 || cellStr.indexOf('類別') !== -1) categoriesIdx = j;
       }
       break;
     }
@@ -921,6 +923,7 @@ function handleGetProducts() {
       }
 
       var merchantRemark = row[29] || "";
+      var categoryVal = (row[categoriesIdx] || row[12] || "").toString().trim();
 
       productsList.push({
         id: id,
@@ -940,10 +943,12 @@ function handleGetProducts() {
         alwaysStock: alwaysStock,
         secondaryStockCount: secondaryStockCount,
         extraAttributes: {
-          "Categories": "Google Sheet Sync",
+          "Categories": categoryVal || "Google Sheet Sync",
           "Merchant Remark": merchantRemark,
           "remarks": merchantRemark
         },
+        category: categoryVal,
+        categories: categoryVal,
         allValues: row.map(function(cell) { return cell.toString(); })
       });
     }

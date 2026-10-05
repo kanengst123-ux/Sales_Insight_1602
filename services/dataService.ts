@@ -548,6 +548,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     let stockIdx = 28; // Col AC
     let listIdx = 31; // Col AF (header: list)
     let imageUrlsIdx = 38; // Col AM (header: Image URLs)
+    let categoriesIdx = 12; // Col M (header: Categories)
 
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
       const idx = rows[i].findIndex(cell => cell && cell.toLowerCase().trim() === 'title');
@@ -559,6 +560,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           return cellStr.replace(/[\s_-]/g, '').includes('productid') || cellStr === 'id';
         });
         if (pIdIdx !== -1) productIdIdx = pIdIdx;
+        const cIdx = rows[i].findIndex(cell => {
+          const cellStr = (cell || '').toLowerCase().trim();
+          return cellStr === 'categories' || cellStr === 'category' || cellStr.includes('分類') || cellStr.includes('類別');
+        });
+        if (cIdx !== -1) categoriesIdx = cIdx;
         const imgIdx = rows[i].findIndex(cell => {
           const cellStr = (cell || '').toLowerCase().trim();
           return cellStr === 'image urls' || cellStr === 'image url' || cellStr === 'image';
@@ -642,6 +648,8 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
           }
         }
 
+        const categoriesVal = (row[categoriesIdx] || row[12] || '').toString().trim();
+
         if (trimmed.length > 1 && !productMap.has(trimmed)) {
           productMap.set(trimmed, {
             id: formattedId || rawProdId,
@@ -656,7 +664,9 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             stock: stockVal,
             list: listVal,
             imageUrl: canonicalImgUrl || undefined,
-            rawImageUrl: directImg || undefined
+            rawImageUrl: directImg || undefined,
+            category: categoriesVal,
+            categories: categoriesVal
           });
         }
       }
@@ -672,7 +682,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
 
   try {
     const [rawRes, s15Res, authRes] = await Promise.allSettled([
-      fetchWithTimeout(MASTER_URL + `&t=${Date.now()}`, { method: 'GET' }, 4500),
+      fetchWithTimeout(MASTER_URL + `&t=${Date.now()}`, { method: 'GET' }, 12000),
       fetchSheetImageMapById(),
       fetchAuthorityProducts()
     ]);
@@ -692,11 +702,11 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
     console.warn('Published master product CSV fetch failed or timed out:', csvError);
   }
 
-  // 2. Quick check against GAS with 8s timeout for freshly added products and live stock
+  // 2. Quick check against GAS with 12s timeout for freshly added products and live stock
   if (UPDATE_SCRIPT_URL && UPDATE_SCRIPT_URL.startsWith('https://')) {
     try {
       const liveUrl = `${UPDATE_SCRIPT_URL}?action=getProducts&t=${Date.now()}`;
-      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 8000);
+      const res = await fetchWithTimeout(liveUrl, { method: 'GET' }, 12000);
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json) && json.length > 0) {
@@ -710,6 +720,13 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
             const resolvedId = formatProductId((p.id && !p.id.startsWith('row-')) ? p.id : (csvData ? csvData.id : p.id));
             const canonicalImg = resolvedId ? `${PRODUCT_IMAGE_SERVICE_BASE_URL}/api/products/${resolvedId}/image` : undefined;
             const resolvedRawImg = p.rawImageUrl || (csvData ? csvData.rawImageUrl : undefined) || (resolvedId ? sheetIdMap.get(resolvedId) : undefined);
+            
+            const rawCatFromGAS = (p.category && String(p.category).trim()) || (p.categories && String(p.categories).trim());
+            const rawCatFromAllValues = Array.isArray(p.allValues) && p.allValues.length > 12 && p.allValues[12] ? String(p.allValues[12]).trim() : '';
+            const rawCatFromCSV = csvData ? (csvData.category || csvData.categories || '') : '';
+            const rawCatFromExtra = (p.extraAttributes && p.extraAttributes.Categories && p.extraAttributes.Categories !== 'Google Sheet Sync') ? String(p.extraAttributes.Categories).trim() : '';
+            const catVal = rawCatFromGAS || rawCatFromAllValues || rawCatFromCSV || rawCatFromExtra || '';
+
             return {
               ...p,
               id: resolvedId,
@@ -719,7 +736,10 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
               stock: p.stock !== undefined ? p.stock : (csvData ? csvData.stock : undefined),
               list: p.list !== undefined && p.list !== null ? String(p.list).trim() : (csvData ? csvData.list : undefined),
               imageUrl: canonicalImg || csvData?.imageUrl,
-              rawImageUrl: resolvedRawImg
+              rawImageUrl: resolvedRawImg,
+              category: catVal,
+              categories: catVal,
+              allValues: Array.isArray(p.allValues) ? p.allValues : csvData?.allValues
             };
           });
 
@@ -748,7 +768,7 @@ export const fetchProducts = async (customId?: string): Promise<Product[]> => {
   // 3. Fallback to client cache
   try {
     const cached = await getCachedItem<Product[]>('products');
-    if (cached && cached.length > 0) {
+    if (cached && cached.length > 0 && cached.some(p => p.category || p.categories || (p.allValues && p.allValues[12]))) {
       return cached;
     }
   } catch (e) {
