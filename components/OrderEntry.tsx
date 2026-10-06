@@ -203,8 +203,51 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
   }, [remark, editingOrder]);
   const [tempPrices, setTempPrices] = useState<Record<string, string>>({});
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('ws_draft_category') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ws_draft_category_search') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (selectedCategory) {
+        localStorage.setItem('ws_draft_category', selectedCategory);
+      } else {
+        localStorage.removeItem('ws_draft_category');
+      }
+    } catch {}
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    try {
+      if (categorySearchQuery) {
+        localStorage.setItem('ws_draft_category_search', categorySearchQuery);
+      } else {
+        localStorage.removeItem('ws_draft_category_search');
+      }
+    } catch {}
+  }, [categorySearchQuery]);
+
+  useEffect(() => {
+    if (!selectedCustomer) {
+      setSelectedCategory(null);
+      setCategorySearchQuery('');
+      try {
+        localStorage.removeItem('ws_draft_category');
+        localStorage.removeItem('ws_draft_category_search');
+      } catch {}
+    }
+  }, [selectedCustomer]);
 
   const selectedCustomerInfo = useMemo(() => {
     return customers.find(c => c.name === selectedCustomer);
@@ -276,7 +319,19 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
   }, [selectedRole]);
 
-  const [activeTab, setActiveTab] = useState<'order' | 'favorites'>('order');
+  const [activeTab, setActiveTab] = useState<'order' | 'favorites'>(() => {
+    try {
+      const stored = localStorage.getItem('ws_draft_order_subtab');
+      if (stored === 'order' || stored === 'favorites') return stored;
+    } catch {}
+    return 'order';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ws_draft_order_subtab', activeTab);
+    } catch {}
+  }, [activeTab]);
   const [productsLoading, setProductsLoading] = useState(initialProducts && initialProducts.length > 0 ? false : true);
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
@@ -639,10 +694,15 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     setSelectedItems([]);
     setRemark('');
     setSelectedCustomer(null);
+    setSelectedCategory(null);
+    setCategorySearchQuery('');
     try {
       localStorage.removeItem('ws_draft_customer');
       localStorage.removeItem('ws_draft_items');
       localStorage.removeItem('ws_draft_remark');
+      localStorage.removeItem('ws_draft_category');
+      localStorage.removeItem('ws_draft_category_search');
+      localStorage.removeItem('ws_draft_order_subtab');
     } catch {}
   };
 
