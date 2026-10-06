@@ -180,7 +180,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order' | 'saved_orders'>(() => {
     try {
-      const storedTab = localStorage.getItem('ws_active_tab');
+      const storedTab = localStorage.getItem('ws_minimized_tab') || localStorage.getItem('ws_active_tab');
       if (storedTab && ['dashboard', 'pivot', 'collections', 'inactive', 'grades', 'order', 'saved_orders'].includes(storedTab)) {
         return storedTab as any;
       }
@@ -188,9 +188,13 @@ const App: React.FC = () => {
     return 'dashboard';
   });
 
+  const currentTabRef = useRef(activeTab);
+  currentTabRef.current = activeTab;
+
   useEffect(() => {
     try {
       localStorage.setItem('ws_active_tab', activeTab);
+      localStorage.setItem('ws_minimized_tab', activeTab);
     } catch {}
   }, [activeTab]);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -1235,6 +1239,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Ensure the app opens at where it was minimized regardless if there is an unfinished order
+        try {
+          const minimizedTab = localStorage.getItem('ws_minimized_tab') || localStorage.getItem('ws_active_tab');
+          if (minimizedTab && ['dashboard', 'pivot', 'collections', 'inactive', 'grades', 'order', 'saved_orders'].includes(minimizedTab)) {
+            setActiveTab(prev => (prev !== minimizedTab ? (minimizedTab as any) : prev));
+          }
+        } catch {}
+
         const todayStr = getTodayDateString();
         const lastReloadDate = localStorage.getItem('ws_last_daily_reload_date');
         // Only reload if the day has changed since last reload
@@ -1242,12 +1254,30 @@ const App: React.FC = () => {
           localStorage.setItem('ws_last_daily_reload_date', todayStr);
           loadData(undefined, true);
         }
+      } else if (document.visibilityState === 'hidden') {
+        // App is minimized: store current tab immediately
+        try {
+          localStorage.setItem('ws_minimized_tab', currentTabRef.current);
+          localStorage.setItem('ws_active_tab', currentTabRef.current);
+        } catch {}
       }
     };
 
+    const handlePageHide = () => {
+      try {
+        localStorage.setItem('ws_minimized_tab', currentTabRef.current);
+        localStorage.setItem('ws_active_tab', currentTabRef.current);
+      } catch {}
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
     };
   }, [loadData]);
 
