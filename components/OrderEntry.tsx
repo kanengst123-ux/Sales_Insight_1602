@@ -127,7 +127,15 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     }
   }, [editingOrder, selectedRole, currentRole, onBack]);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(editingOrder?.customerName || preSelectedCustomer || null);
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(() => {
+    if (editingOrder?.customerName) return editingOrder.customerName;
+    if (preSelectedCustomer) return preSelectedCustomer;
+    try {
+      return localStorage.getItem('ws_draft_customer') || null;
+    } catch {
+      return null;
+    }
+  });
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers || []);
 
   useEffect(() => {
@@ -144,9 +152,56 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   }, [preSelectedCustomer, onClearPreSelectedCustomer]);
 
   const [products, setProducts] = useState<Product[]>(initialProducts || []);
-  const [selectedItems, setSelectedItems] = useState<OrderItem[]>(editingOrder?.items || []);
-  const [remark, setRemark] = useState(editingOrder?.remark || '');
-  const [showRemarkInput, setShowRemarkInput] = useState(!!editingOrder?.remark);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>(() => {
+    if (editingOrder?.items && editingOrder.items.length > 0) return editingOrder.items;
+    try {
+      const stored = localStorage.getItem('ws_draft_items');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [remark, setRemark] = useState<string>(() => {
+    if (editingOrder?.remark) return editingOrder.remark;
+    try {
+      return localStorage.getItem('ws_draft_remark') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [showRemarkInput, setShowRemarkInput] = useState(() => !!editingOrder?.remark || !!localStorage.getItem('ws_draft_remark'));
+
+  useEffect(() => {
+    if (!editingOrder) {
+      if (selectedCustomer) {
+        localStorage.setItem('ws_draft_customer', selectedCustomer);
+      } else {
+        localStorage.removeItem('ws_draft_customer');
+      }
+    }
+  }, [selectedCustomer, editingOrder]);
+
+  useEffect(() => {
+    if (!editingOrder) {
+      if (selectedItems && selectedItems.length > 0) {
+        localStorage.setItem('ws_draft_items', JSON.stringify(selectedItems));
+      } else {
+        localStorage.removeItem('ws_draft_items');
+      }
+    }
+  }, [selectedItems, editingOrder]);
+
+  useEffect(() => {
+    if (!editingOrder) {
+      if (remark) {
+        localStorage.setItem('ws_draft_remark', remark);
+      } else {
+        localStorage.removeItem('ws_draft_remark');
+      }
+    }
+  }, [remark, editingOrder]);
   const [tempPrices, setTempPrices] = useState<Record<string, string>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
@@ -580,10 +635,15 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
     };
     
     onSaveOrder?.(order);
-    // Reset state
+    // Reset state & clear persistent draft
     setSelectedItems([]);
     setRemark('');
     setSelectedCustomer(null);
+    try {
+      localStorage.removeItem('ws_draft_customer');
+      localStorage.removeItem('ws_draft_items');
+      localStorage.removeItem('ws_draft_remark');
+    } catch {}
   };
 
   const handleAddCustomerConfirm = async () => {

@@ -155,6 +155,14 @@ const mergeOrderLists = (
   });
 };
 
+const getTodayDateString = (): string => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
@@ -170,7 +178,21 @@ const App: React.FC = () => {
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order' | 'saved_orders'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pivot' | 'collections' | 'inactive' | 'grades' | 'order' | 'saved_orders'>(() => {
+    try {
+      const storedTab = localStorage.getItem('ws_active_tab');
+      if (storedTab && ['dashboard', 'pivot', 'collections', 'inactive', 'grades', 'order', 'saved_orders'].includes(storedTab)) {
+        return storedTab as any;
+      }
+    } catch {}
+    return 'dashboard';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ws_active_tab', activeTab);
+    } catch {}
+  }, [activeTab]);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'cloud' | 'local'>('cloud');
   const [sheetId, setSheetId] = useState<string>('');
@@ -1181,8 +1203,16 @@ const App: React.FC = () => {
             return mergeOrderLists(cleanedPrev, cachedCloudOrders || [], serverOrdersResult?.orders || [], hydrationDeletedSet);
           });
 
-          // Silently revalidate in background to get latest changes without freezing UI
-          loadData(undefined, true);
+          // Check if this is the 1st time opened in a day
+          const todayStr = getTodayDateString();
+          const lastReloadDate = localStorage.getItem('ws_last_daily_reload_date');
+          const isFirstOpenToday = lastReloadDate !== todayStr;
+
+          if (isFirstOpenToday) {
+            localStorage.setItem('ws_last_daily_reload_date', todayStr);
+            // Silently revalidate in background only on the 1st open of each day
+            loadData(undefined, true);
+          }
           return;
         }
       } catch (cacheErr) {
@@ -1191,12 +1221,33 @@ const App: React.FC = () => {
 
       // 2. If no cache exists, run standard load with spinner
       if (isMounted) {
+        localStorage.setItem('ws_last_daily_reload_date', getTodayDateString());
         loadData(undefined, false);
       }
     })();
 
     return () => {
       isMounted = false;
+    };
+  }, [loadData]);
+
+  // Listen for visibility changes (when user switches back from another app or unminimizes)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const todayStr = getTodayDateString();
+        const lastReloadDate = localStorage.getItem('ws_last_daily_reload_date');
+        // Only reload if the day has changed since last reload
+        if (lastReloadDate !== todayStr) {
+          localStorage.setItem('ws_last_daily_reload_date', todayStr);
+          loadData(undefined, true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadData]);
 

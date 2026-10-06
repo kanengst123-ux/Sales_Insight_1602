@@ -908,10 +908,10 @@ async function startServer() {
     res.json({ success: true, count: orderIds.length });
   });
 
-  // Vite middleware for development
+  // Vite middleware for development (HMR disabled to prevent reload on app minimize/switch)
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);

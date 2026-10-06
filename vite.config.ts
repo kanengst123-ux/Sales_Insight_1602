@@ -18,6 +18,7 @@ export default defineConfig({
     sourcemap: false // Turned off for production to keep the code cleaner
   },
   server: {
-    port: 3000
+    port: 3000,
+    hmr: false
   }
 });
