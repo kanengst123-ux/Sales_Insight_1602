@@ -882,19 +882,27 @@ export const writeTradeLogToSheet = async (
 
 export const deleteOrderFromSheet = async (orderId: string, rows?: any[][]): Promise<boolean> => {
   try {
-    const payload: { action: string; orderId: string; replenishStock: boolean; rows?: any[][] } = {
-      action: 'deleteOrder',
+    const basePayload: any = {
       orderId,
+      orderIds: [orderId],
       replenishStock: true
     };
     if (rows && rows.length > 0) {
-      payload.rows = rows;
+      basePayload.rows = rows;
     }
+    // 1. Send revertTradeLog (matches user's Google Apps Script action #5)
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...basePayload, action: 'revertTradeLog' })
+    });
+    // 2. Also send deleteOrder (matches google-apps-script.js template)
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...basePayload, action: 'deleteOrder' })
     });
     return true;
   } catch (error) {
@@ -909,20 +917,28 @@ export const deleteOrderFromSheet = async (orderId: string, rows?: any[][]): Pro
  */
 export const removeOrderFromSheetKeepStock = async (orderId: string): Promise<boolean> => {
   try {
-    const payload = {
-      action: 'deleteOrder',
+    const basePayload = {
       orderId,
+      orderIds: [orderId],
       skipStockReplenish: true,
       keepStock: true,
       replenishStock: false,
       // Provide dummy row with length < 6 so any deployed version will not replenish stock
       rows: [['SKIP_STOCK_REPLENISH']]
     };
+    // 1. Send revertTradeLog
     await fetch(UPDATE_SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...basePayload, action: 'revertTradeLog' })
+    });
+    // 2. Send deleteOrder
+    await fetch(UPDATE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...basePayload, action: 'deleteOrder' })
     });
     return true;
   } catch (error) {

@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { User, ShieldCheck, ArrowLeft, ArrowRight, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X } from 'lucide-react';
+import { User, ShieldCheck, ArrowLeft, ArrowRight, ShoppingCart, ChevronRight, Search, Loader2, Plus, Minus, Trash2, Package, Box, Check, Star, ListOrdered, UserPlus, PackagePlus, X, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCustomerGrades, fetchProducts, addCustomerToSheet, addProductToSheet } from '../services/dataService';
+import { setCachedItem } from '../services/cacheService';
 import { Product, OrderItem, Customer, SavedOrder, isOrderOwner } from '../types';
 import { ProductThumbnail } from './ProductThumbnail';
 
@@ -86,6 +87,7 @@ interface OrderEntryProps {
   onClearPreSelectedCustomer?: () => void;
   onCustomerAdded?: (name: string) => void;
   onProductAdded?: (product: Product) => void;
+  onRefreshAll?: () => Promise<void>;
   currentRole?: string | null;
   onSelectRole?: (role: string) => void;
 }
@@ -96,15 +98,16 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   onShowOrderList, 
   editingOrder, 
   onGenerateOrderId, 
-  initialCustomers,
-  initialProducts,
-  savedOrders = [],
-  preSelectedCustomer = null,
-  onClearPreSelectedCustomer,
-  onCustomerAdded,
-  onProductAdded,
-  currentRole,
-  onSelectRole
+  initialCustomers, 
+  initialProducts, 
+  savedOrders = [], 
+  preSelectedCustomer = null, 
+  onClearPreSelectedCustomer, 
+  onCustomerAdded, 
+  onProductAdded, 
+  onRefreshAll,
+  currentRole, 
+  onSelectRole 
 }) => {
   const [selectedRole, setSelectedRole] = useState<string | null>(() => {
     return currentRole || localStorage.getItem('ws_selected_role');
@@ -345,6 +348,68 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
   const [newCustomerGrade, setNewCustomerGrade] = useState<'A' | 'B' | 'C'>('C');
   const [newProductName, setNewProductName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshingLive, setIsRefreshingLive] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  const handleRefreshLiveInfo = async () => {
+    if (isRefreshingLive) return;
+    setIsRefreshingLive(true);
+    setRefreshMessage(null);
+    try {
+      // Fetch latest products (prices, A/B/C tier prices, stock levels) and customer grades from Google Sheet
+      const [freshProducts, freshCustomers] = await Promise.all([
+        fetchProducts(),
+        fetchCustomerGrades()
+      ]);
+
+      if (freshProducts && freshProducts.length > 0) {
+        setProducts(freshProducts);
+        setCachedItem('products', freshProducts);
+
+        // Also update prices of current items in the cart if their pricing was updated in the sheet
+        const currentGrade = selectedCustomerInfo?.grade || 'C';
+        setSelectedItems(prev => prev.map(item => {
+          const matched = freshProducts.find(p => p.name === item.name);
+          if (matched) {
+            let rawTieredPrice: any = 0;
+            if (matched.prices && matched.prices[currentGrade] !== undefined && matched.prices[currentGrade] !== null && (matched.prices[currentGrade] as any) !== '') {
+              rawTieredPrice = matched.prices[currentGrade];
+            } else if ((matched as any)[`price${currentGrade}`] !== undefined) {
+              rawTieredPrice = (matched as any)[`price${currentGrade}`];
+            } else {
+              rawTieredPrice = matched.price || 0;
+            }
+            const newPrice = typeof rawTieredPrice === 'number'
+              ? rawTieredPrice
+              : (parseFloat(String(rawTieredPrice).replace(/[^0-9.-]/g, '')) || 0);
+            
+            if (newPrice > 0 && Math.abs(newPrice - item.price) > 0.001) {
+              return { ...item, price: newPrice };
+            }
+          }
+          return item;
+        }));
+      }
+
+      if (freshCustomers && freshCustomers.length > 0) {
+        setCustomers(freshCustomers);
+        setCachedItem('customers', freshCustomers);
+      }
+
+      if (onRefreshAll) {
+        await onRefreshAll();
+      }
+
+      setRefreshMessage('已更新最新價格與庫存！');
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to refresh live info:', err);
+      setRefreshMessage('更新失敗，請檢查網路');
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } finally {
+      setIsRefreshingLive(false);
+    }
+  };
 
   const salesPeople = ['EVA', 'KATIE', 'YO', 'KASEY'];
   const districts = ['新界東', '新界西', '九龍東', '九龍西', '港島'];
@@ -1488,8 +1553,8 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                               </span>
                             </div>
 
-                            {/* Remark Button */}
-                            <div className="flex items-center gap-2">
+                            {/* Remark Button & Refresh Button */}
+                            <div className="flex items-center gap-2 flex-wrap">
                               <button 
                                 type="button"
                                 onClick={() => setShowRemarkInput(!showRemarkInput)}
@@ -1510,6 +1575,25 @@ const OrderEntry: React.FC<OrderEntryProps> = ({
                                 >
                                   Clear
                                 </button>
+                              )}
+                              <button 
+                                type="button"
+                                onClick={handleRefreshLiveInfo}
+                                disabled={isRefreshingLive}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-black transition-all border shadow-sm ${
+                                  isRefreshingLive 
+                                    ? 'bg-slate-100 text-slate-400 border-slate-300 cursor-not-allowed' 
+                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:border-emerald-700 shadow-emerald-600/20 active:scale-95'
+                                }`}
+                                title="從 Google Sheet 重新抓取最新貨品價格與庫存"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 stroke-[2.5] ${isRefreshingLive ? 'animate-spin' : ''}`} />
+                                <span>{isRefreshingLive ? '更新中...' : '更新'}</span>
+                              </button>
+                              {refreshMessage && (
+                                <span className="text-[11px] font-bold text-emerald-600 animate-fade-in whitespace-nowrap">
+                                  {refreshMessage}
+                                </span>
                               )}
                             </div>
 

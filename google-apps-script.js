@@ -70,8 +70,8 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // E. Action: deleteOrder / removeTradeLogRows (Deletes order and replenishes stock strictly 1x, or keeps stock unchanged if requested)
-    if (action === 'deleteOrder' || action === 'removeTradeLogRows' || action === 'deleteTradeLog') {
+    // E. Action: deleteOrder / removeTradeLogRows / revertTradeLog (Deletes order and replenishes stock strictly 1x, or keeps stock unchanged if requested)
+    if (action === 'deleteOrder' || action === 'removeTradeLogRows' || action === 'deleteTradeLog' || action === 'revertTradeLog' || action === 'revertTrade') {
       var delResult = handleDeleteOrder(param);
       return ContentService.createTextOutput(JSON.stringify(delResult))
         .setMimeType(ContentService.MimeType.JSON);
@@ -503,7 +503,15 @@ function handleWriteTradeLog(param) {
  */
 function handleDeleteOrder(param) {
   var rowValuesToReplenish = param.rows;
-  var orderId = param.orderId ? param.orderId.toString().trim() : null;
+  var targetOrderIds = {};
+  if (param.orderId) targetOrderIds[param.orderId.toString().trim()] = true;
+  if (param.orderIds && Array.isArray(param.orderIds)) {
+    param.orderIds.forEach(function(id) {
+      if (id) targetOrderIds[id.toString().trim()] = true;
+    });
+  }
+  var orderIdList = Object.keys(targetOrderIds);
+  var orderId = orderIdList.length > 0 ? orderIdList[0] : null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var logSheets = getUniqueTradeLogSheets(ss);
 
@@ -511,7 +519,7 @@ function handleDeleteOrder(param) {
   var shouldReplenishStock = !param.keepStock && !param.skipStockReplenish && param.replenishStock !== false;
 
   // If trade rows to replenish were not explicitly provided, extract them from the sheets before deleting
-  if (shouldReplenishStock && orderId && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
+  if (shouldReplenishStock && orderIdList.length > 0 && (!rowValuesToReplenish || rowValuesToReplenish.length === 0)) {
     rowValuesToReplenish = [];
     logSheets.forEach(function(s) {
       var lRow = s.getLastRow();
@@ -519,7 +527,7 @@ function handleDeleteOrder(param) {
         var vals = s.getRange(1, 1, lRow, 14).getValues();
         for (var r = 1; r < lRow; r++) {
           var rowOrderId = (vals[r][12] || '').toString().trim();
-          if (rowOrderId === orderId) {
+          if (rowOrderId && targetOrderIds[rowOrderId]) {
             rowValuesToReplenish.push(vals[r]);
           }
         }
@@ -534,14 +542,14 @@ function handleDeleteOrder(param) {
 
   // Delete order rows from all unique log sheets
   var deletedCount = 0;
-  if (orderId) {
+  if (orderIdList.length > 0) {
     logSheets.forEach(function(s) {
       var lastRow = s.getLastRow();
       if (lastRow > 1) {
         var colMValues = s.getRange(2, 13, lastRow - 1, 1).getValues();
         for (var r = lastRow; r >= 2; r--) {
-          var cellValue = colMValues[r - 2][0];
-          if (cellValue && cellValue.toString().trim() === orderId) {
+          var cellValue = (colMValues[r - 2][0] || '').toString().trim();
+          if (cellValue && targetOrderIds[cellValue]) {
             s.deleteRow(r);
             deletedCount++;
           }

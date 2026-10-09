@@ -1404,6 +1404,7 @@ const App: React.FC = () => {
         onClearPreSelectedCustomer={() => setPreSelectedCustomer(null)}
         onCustomerAdded={handleCustomerAdded}
         onProductAdded={(newProd) => setProducts(prev => [newProd, ...prev.filter(p => p.name !== newProd.name)])}
+        onRefreshAll={() => loadData(undefined, true)}
         currentRole={currentRole}
         onSelectRole={handleSelectRole}
       />
